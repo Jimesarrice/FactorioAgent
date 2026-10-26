@@ -1,10 +1,18 @@
 # 部署与运维手册（分发版）
 
-版本：0.3.8（客户端无人值守循环 + 寻路/挖矿/合成/物资流转 + SDL 输入 + 内存读取 + 同机 Steam 共存）  
+版本：0.3.9（客户端电力/科研/装配机 + 无人值守循环 + 寻路/挖矿/合成/物资流转 + SDL 输入 + 内存读取）  
 适用：Windows 10/11（真实玩家模式）；Linux 可运行 headless 服务端，但第二真实客户端未做完整验证。  
 游戏：Factorio **2.1.x**，需要 **Space Age** DLC（真实玩家/太空平台功能依赖它）。
 
 ---
+
+## 0. 0.3.9 更新摘要
+
+- 客户端侧**建成电力**：手造泵/锅炉/蒸汽机/杆/实验室，水边用正常建造输入接通水→管→锅炉→蒸汽机；实测锅炉 water/steam、蒸汽机 steam=200、实验室通电。
+- **科研走科技树 UI**：Ctrl+F 搜索 automation → 选中 → Start research；实验室 GUI 放 10 红瓶；约 90 秒 `automation` researched=true。
+- **装配机配方 GUI**：`client_action_set_recipe` / `client_action_recipe`（客户端 `get_recipe()` 可读）；实测设定 iron gear wheel 后产出 15 齿轮。
+- 走路改为轻量两格探针 + 八向脱困，替代 2400 瓦片的网格查询；长时间会话未再崩溃。
+- 客户端 MCP **49 个** `client_*` 工具。
 
 ## 0. 0.3.8 更新摘要
 
@@ -58,8 +66,8 @@
 
 
 - `bridge/client_control.py`：Win32 窗口/键鼠/截图控制。
-- `bridge/client_mcp_server.py`：独立 MCP server，47 个 `client_*` 工具（0.3.8 含无人值守循环），截图可内联返回图片。
-- `bridge/client_actions.py`：0.3.8 高层后台动作（寻路/挖矿/伐木/合成/取放物资/放置/打开）。
+- `bridge/client_mcp_server.py`：独立 MCP server，49 个 `client_*` 工具（0.3.9 含配方设置），截图可内联返回图片。
+- `bridge/client_actions.py`：0.3.9 高层后台动作（寻路/挖矿/伐木/合成/取放物资/放置/打开/设配方）。
 - `bridge/client_autopilot.py`：0.3.8 无人值守循环。
 - `bridge/client_input.py`：0.3.5 后台 SDL 动作通道（键盘/虚拟鼠标），不要求窗口前台。
 - 适用于原版 freeplay Host（例如 204）；输入类工具需要前台，`client_memory_*` 通过 Frida 只读 Lua 桥在后台读取位置/背包/附近资源。
@@ -113,7 +121,7 @@ FactorioAgent 让大模型在**真实运行的 Factorio 服务器**里扮演一�
 ## 2. 分发包内容
 
 ```
-FactorioAgent-0.3.8/
+FactorioAgent-0.3.9/
 ├─ README.md                    项目说明
 ├─ VERSION                     版本号
 ├─ LICENSE                     MIT
@@ -703,21 +711,21 @@ python -m bridge.cli stop --rcon-port 27017 --rcon-password "你的密码"
 
 每个发布 zip 旁会提供：
 
-- `FactorioAgent-0.3.8.zip`
-- `FactorioAgent-0.3.8.zip.sha256`
+- `FactorioAgent-0.3.9.zip`
+- `FactorioAgent-0.3.9.zip.sha256`
 - `MANIFEST.txt`（包内）
 
 Windows 校验：
 
 ```powershell
-Get-FileHash .\FactorioAgent-0.3.8.zip -Algorithm SHA256
-Get-Content .\FactorioAgent-0.3.8.zip.sha256
+Get-FileHash .\FactorioAgent-0.3.9.zip -Algorithm SHA256
+Get-Content .\FactorioAgent-0.3.9.zip.sha256
 ```
 
 Linux/macOS：
 
 ```bash
-sha256sum FactorioAgent-0.3.8.zip
+sha256sum FactorioAgent-0.3.9.zip
 ```
 
 ---

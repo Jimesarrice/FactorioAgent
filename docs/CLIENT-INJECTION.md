@@ -21,9 +21,10 @@
 | 组件 | 作用 |
 |---|---|
 | `bridge/client_control.py` | 查找/聚焦 Factorio 窗口，发送 WASD、鼠标点击/长按、滚轮、文本，截图 |
-| `bridge/client_mcp_server.py` | 独立 MCP stdio server，暴露 47 个 `client_*` 工具（含高层动作、合成/物资流转、无人值守循环、后台输入与内存读取） |
+| `bridge/client_mcp_server.py` | 独立 MCP stdio server，暴露 49 个 `client_*` 工具（含高层动作、合成/物资流转、无人值守循环、配方设置、后台输入与内存读取） |
 | `bridge/client_actions.py` | 0.3.6-0.3.8 高层后台动作：瓦片寻路行走/挖矿/伐木/合成/取放物资/放置/打开 GUI |
 | `bridge/client_autopilot.py` | 0.3.8 无人值守燃烧时代循环：收矿/装炉/取板/分煤/工单合成/回锚点 |
+| `bridge/client_actions.py`（0.3.9） | 电力/实验室/装配机 GUI：`set_recipe`、`recipe_of`、快速转移、轻量探针走路 |
 | `bridge/client_input.py` | 0.3.5 后台 SDL 动作通道：键盘/文本/虚拟鼠标，不要求前台 |
 | `bridge/client_memory.py` | Frida 只读 Lua 桥：抓取 lua_State、在游戏线程读取玩家/背包/附近环境 |
 | `docs/client-mcp-config.example.json` | MCP 客户端配置示例 |
@@ -122,6 +123,26 @@ MCP：`client_auto_start`（参数 drill/chest/furnace/anchor/orders/interval/mi
 3. **精确背包槽**：客户端 Lua 的 `inv[i].name`（1..40）是可读的（`get_slot` 仍会硬错误），所以取物前先解析物品所在槽，不再“逐格试拿再放回”；避免误拿木箱时回放失败卡住循环。合成还加了 `expect` 校验：搜索结果被吞时（点到了默认列表首格）会重开界面重试一次。
 
 **8 分钟实测**：20 个 tick、0 错误；收矿 116、装炉 116、取板 115、耗煤 39；工单把铁齿轮补到 12；结束时背包 192 铁板 / 12 齿轮，熔炉仍在工作。
+
+**0.3.9 实测**：同一局继续建电厂与实验室，automation 研究完成后装配机设定配方并产出 15 齿轮；MCP 端 `client_action_set_recipe` 返回 `{ok:true, recipe:"iron-gear-wheel", status:31}`。
+
+## 1.9 电力、科研与装配机（0.3.9）
+
+这一轮把客户端侧从“燃烧时代循环”推进到**电力 + 科研 + 装配机**，全部用正常玩家输入完成：
+
+- 手造 `offshore-pump`、`boiler`、`steam-engine`、`small-electric-pole`、`lab`；走到水边按真实建造流程摆放。
+- 实测布局（世界坐标）：pump(18.5,58.5,dir4,水在东) → 管道(17.5,58.5) → boiler(15.5,58) → steam-engine(15.5,54.5)；电线杆(13.5,56.5)/(12.5,59.5)；lab(12.5,63.5)。管道用 `get_fluid_contents()` 读到 `water=100`，锅炉 `water/steam`，蒸汽机 `steam=200`，说明流体连接正确。
+- **科研**：T 打开科技树 → Ctrl+F → 输入 `automation` → 点选 → `Start research`；实验室 GUI 把 10 个红瓶放进红瓶槽（也可以右键快速转移）。约 90 秒后 `automation` researched=true。
+- **装配机**：`assembling-machine-1` 无配方时打开即弹出 “Select a recipe” 浏览器；搜索 + **双击**首个结果设定配方。新增：
+
+| 工具 | 行为 |
+|---|---|
+| `client_action_set_recipe` | 打开无配方机器 → 浏览器搜索 → 双击首个结果；用 `recipe_of` 自校验 |
+| `client_action_recipe` | 只读 Lua 的 `entity.get_recipe()`/`status`（背包读取仍不可用） |
+
+实测：设定 `iron gear wheel` 后 Ctrl+点击把 69 铁板塞进输入，1 分钟产出 **15 齿轮**（status 1）。
+
+**走路稳定性**：0.3.7 的 24 格碰撞网格每次重规划 2400+ 次瓦片查询，长时间行走后客户端两次在 `luaD_rawrunprotected` 崩溃。现改为每步只探前方 2 格（`_probe_blocked`）+ 八向脱困（`_escape_stuck`），40 分钟连续会话未再崩。
 
 **限制**：实体库存无法通过客户端 Lua 读取（对非玩家实体调用 `get_inventory` 会硬错误），循环以时间片 + 玩家背包增量计数；煤的分配是启发式（半叠轮换），没有真实库存反馈。长时运行应在有 scenario/RCON 的服务器上并行观察，或定期人工校准。
 

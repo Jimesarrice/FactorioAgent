@@ -145,6 +145,16 @@ TOOLS = [
     {"name": "client_action_pick_ground", "description": "Pick up item-on-ground at a world position with F (e.g. burner mining drill output, which drops at drop_position).",
      "inputSchema": {"type": "object", "properties": {
          "x": {"type": "number"}, "y": {"type": "number"}}, "required": ["x", "y"]}},
+    {"name": "client_action_set_recipe", "description": "Open a machine that has no recipe yet (the recipe browser appears), search a recipe and select the first result; verifies via the read-only client Lua entity.get_recipe().",
+     "inputSchema": {"type": "object", "properties": {
+         "x": {"type": "number"}, "y": {"type": "number"},
+         "entity": {"type": "string"}, "query": {"type": "string"},
+         "timeout": {"type": "number", "default": 8}},
+         "required": ["x", "y", "entity", "query"]}},
+    {"name": "client_action_recipe", "description": "Read a machine's current recipe and status through the client Lua bridge (get_recipe works; inventory reads do not).",
+     "inputSchema": {"type": "object", "properties": {
+         "x": {"type": "number"}, "y": {"type": "number"},
+         "entity": {"type": "string"}}, "required": ["x", "y", "entity"]}},
     {"name": "client_auto_start", "description": "Start the unattended burner-era loop in a background thread: collect ore from the drop chest, load the furnace, collect plates, share coal, hand-craft work orders, return to the anchor. All normal client input; needs client_action_attach first.",
      "inputSchema": {"type": "object", "properties": {
          "drill": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
@@ -397,6 +407,18 @@ class ClientMcpServer:
                 raise RuntimeError("high-level action agent is not attached")
             out = self.actions.pick_ground(float(args["x"]), float(args["y"]))
             return json.dumps(out, ensure_ascii=False), True, None
+        if name == "client_action_set_recipe":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            out = self.actions.set_recipe(float(args["x"]), float(args["y"]),
+                                          args["entity"], args["query"],
+                                          float(args.get("timeout", 8)))
+            return json.dumps(out, ensure_ascii=False), True, None
+        if name == "client_action_recipe":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            out = self.actions.recipe_of(float(args["x"]), float(args["y"]), args["entity"])
+            return json.dumps(out, ensure_ascii=False), True, None
         if name == "client_auto_start":
             if not self.actions:
                 raise RuntimeError("high-level action agent is not attached")
@@ -488,7 +510,7 @@ class ClientMcpServer:
             return {"jsonrpc": "2.0", "id": mid, "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "factorio-client-control", "version": "0.3.8"},
+                "serverInfo": {"name": "factorio-client-control", "version": "0.3.9"},
                 "instructions": (
                     "Client-side input control for a running Factorio window. "
                     "Call client_list_windows/client_attach, client_focus, then use "

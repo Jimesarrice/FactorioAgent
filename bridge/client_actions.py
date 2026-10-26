@@ -46,6 +46,13 @@ class ClientActions:
         "burner-mining-drill": {"char": (1223.0, 518.0),
                                 "fuel": (1767.0, 782.0)},
         "wooden-chest": {"char": (1223.0, 508.0), "slot1": (1764.0, 715.0)},
+        "boiler": {"char": (1223.0, 518.0), "fuel": (1770.0, 710.0)},
+        "lab": {"char": (1223.0, 500.0), "red": (1760.0, 775.0)},
+        "assembling-machine-1": {"char": (1225.0, 523.0), "input": (1775.0, 765.0)},
+    }
+    RECIPE_BROWSER = {
+        "search": (1845.0, 490.0),
+        "first": (1496.0, 640.0),
     }
 
     def __init__(self, pid: int, name: str | None = None,
@@ -585,53 +592,101 @@ return helpers.table_to_json({
         for k in keys:
             self.input.key(k, False)
         time.sleep(0.1)
-        st2 = self.state()
-        return math.hypot(st2["pos"]["x"] - px, st2["pos"]["y"] - py)
+        x2, y2 = self._pos()
+        return math.hypot(x2 - px, y2 - py)
+
+    def _escape_stuck(self) -> bool:
+        """Probe the eight walking directions and take the one that moves."""
+        best = 0.0
+        for keys in (["s"], ["a"], ["d"], ["w"],
+                     ["s", "a"], ["s", "d"], ["w", "a"], ["w", "d"]):
+            x0, y0 = self._pos()
+            for k in keys:
+                self.input.key(SCANCODES[k], True)
+            time.sleep(0.9)
+            for k in keys:
+                self.input.key(SCANCODES[k], False)
+            time.sleep(0.2)
+            x1, y1 = self._pos()
+            moved = math.hypot(x1 - x0, y1 - y0)
+            best = max(best, moved)
+            if moved > 1.2:
+                return True
+        return best > 0.4
+
+    def _probe_blocked(self, dx: float, dy: float,
+                       dists: tuple[float, ...] = (0.9, 1.8)) -> bool:
+        """Lightweight collision probe: two tiles ahead in one direction."""
+        ux = 1 if dx > 0.25 else (-1 if dx < -0.25 else 0)
+        uy = 1 if dy > 0.25 else (-1 if dy < -0.25 else 0)
+        if not ux and not uy:
+            return False
+        dl = ",".join(f"{d}" for d in dists)
+        code = ("local p=game.get_player('LLM-Bot'); local c=p.character; "
+                "local bx,by=c.position.x,c.position.y; local n=0; "
+                f"for _,d in pairs({{{dl}}}) do "
+                f"local t=c.surface.get_tile(math.floor(bx+({ux})*d), math.floor(by+({uy})*d)); "
+                "if t and t.collides_with('player') then n=n+1 end end; "
+                "return helpers.table_to_json({ok=true,n=n})")
+        q = self.memory.evaluate(code)
+        return int((q.get("value") or {}).get("n") or 0) > 0
+
+    def _pos(self) -> tuple[float, float]:
+        q = self.memory.evaluate(
+            "local p=game.get_player('LLM-Bot'); local c=p.character; "
+            "return helpers.table_to_json({ok=true,x=c.position.x,y=c.position.y})")
+        v = q.get("value") or {}
+        return float(v.get("x", 0.0)), float(v.get("y", 0.0))
 
     def walk_to(self, x: float, y: float, tolerance: float = 0.8,
                 timeout: float = 60.0) -> dict:
+        """Steer toward (x, y) with tiny two-tile collision probes.
+
+        A full collision-grid BFS costs thousands of Lua tile calls per replan
+        and repeatedly hammering the client Lua state is a crash risk; probing
+        only the tiles just ahead keeps the call volume tiny.  The eight-way
+        escape probe below recovers when a pocket defeats the steering.
+        """
         deadline = time.time() + timeout
-        stuck_runs = 0
+        stuck = 0
         while time.time() < deadline:
-            st = self.state()
-            px, py = st["pos"]["x"], st["pos"]["y"]
-            if math.hypot(x - px, y - py) <= tolerance:
-                return st
-            try:
-                path = self._plan_path(x, y)
-            except Exception:
-                path = None
-            if path:
-                moved_total = 0.0
-                for wx, wy in path[:14]:
-                    if time.time() > deadline:
+            px, py = self._pos()
+            dx, dy = x - px, y - py
+            dist = math.hypot(dx, dy)
+            if dist <= tolerance:
+                return self.state()
+            if self._probe_blocked(dx / dist, dy / dist):
+                ang = math.atan2(dy, dx)
+                for a in (ang - math.pi / 4, ang + math.pi / 4,
+                          ang + math.pi / 2, ang - math.pi / 2):
+                    if not self._probe_blocked(math.cos(a), math.sin(a)):
+                        dx, dy = math.cos(a), math.sin(a)
                         break
-                    cur = self.state()
-                    if math.hypot(wx - cur["pos"]["x"], wy - cur["pos"]["y"]) <= 0.35:
-                        continue
-                    moved = self._walk_step(wx, wy, deadline)
-                    moved_total += moved
-                    if moved < 0.05:
-                        break
-                if moved_total < 0.15:
-                    stuck_runs += 1
-                    if stuck_runs >= 4:
-                        raise RuntimeError(f"walk_to blocked near ({px:.1f},{py:.1f})")
-                else:
-                    stuck_runs = 0
+            keys = []
+            if abs(dx) > 0.3:
+                keys.append(SCANCODES["d"] if dx > 0 else SCANCODES["a"])
+            if abs(dy) > 0.3:
+                keys.append(SCANCODES["s"] if dy > 0 else SCANCODES["w"])
+            if not keys:
+                return self.state()
+            for k in keys:
+                self.input.key(k, True)
+            time.sleep(min(0.5, max(0.15, dist / 4.0)))
+            for k in keys:
+                self.input.key(k, False)
+            time.sleep(0.12)
+            px2, py2 = self._pos()
+            moved = math.hypot(px2 - px, py2 - py)
+            if moved < 0.1:
+                stuck += 1
+                if stuck >= 3 and not self._escape_stuck():
+                    raise RuntimeError(f"walk_to blocked near ({px:.1f},{py:.1f})")
             else:
-                moved = self._walk_step(x, y, deadline)
-                if moved < 0.05:
-                    stuck_runs += 1
-                    if stuck_runs >= 4:
-                        raise RuntimeError(f"walk_to blocked near ({px:.1f},{py:.1f})")
-                else:
-                    stuck_runs = 0
-        st = self.state()
-        px, py = st["pos"]["x"], st["pos"]["y"]
+                stuck = 0
+        px, py = self._pos()
         if math.hypot(x - px, y - py) > max(tolerance, 1.5):
             raise RuntimeError(f"walk_to timeout to ({x},{y}) at ({px:.1f},{py:.1f})")
-        return st
+        return self.state()
 
     # -------------------------------------------------------------------- GUI
     def _slot_screen(self, index: int) -> tuple[float, float]:
@@ -726,8 +781,9 @@ return helpers.table_to_json({
             self.input.release_all()
             raise RuntimeError("right mouse is held and started mining; build drills before mining")
         if direction is not None:
-            self.input.tap(SCANCODES["r"], 50)
-            time.sleep(0.2)
+            for _ in range(max(0, int(direction) // 4) % 4):
+                self.input.tap(SCANCODES["r"], 50)
+                time.sleep(0.25)
         self.input.click_pair(1, 40)
         time.sleep(0.8)
         st = self.state()
@@ -808,6 +864,17 @@ return helpers.table_to_json({
         self.input.click(geo[slot][0], geo[slot][1], 1, 30)
         time.sleep(0.4)
         st = self.state()
+        if st.get("cursor") == item:
+            # The target slot is full: put the remainder back into the stack
+            # we took it from instead of leaving it on the cursor.
+            idx = self._main_inventory_slot(item) or 1
+            col = (idx - 1) % self.inventory_columns
+            row = (idx - 1) // self.inventory_columns
+            sx = geo["char"][0] + col * self.inventory_slot
+            sy = geo["char"][1] + row * self.inventory_slot
+            self.input.click(sx, sy, 1, 30)
+            time.sleep(0.35)
+            st = self.state()
         leftover = st.get("cursor")
         self.input.tap(SCANCODES["e"], 60)  # closing returns cursor leftovers
         time.sleep(0.5)
@@ -848,6 +915,56 @@ return helpers.table_to_json({
         time.sleep(0.5)
         return {"ok": bool(gained), "gained": gained,
                 "inventory": self.state().get("inventory")}
+
+    def recipe_of(self, x: float, y: float, entity_name: str) -> dict:
+        """Read a machine's recipe/status through the read-only Lua bridge."""
+        code = ("local p=game.get_player('LLM-Bot'); local c=p.character; "
+                f"local e=c.surface.find_entities_filtered{{name={entity_name!r},"
+                f"position={{x={x},y={y}}},radius=2.5}}[1]; "
+                "if not e then return helpers.table_to_json({ok=false,why='missing'}) end; "
+                "local ok,r=pcall(function() return e.get_recipe() end); "
+                "return helpers.table_to_json({ok=true,recipe=(ok and r) and r.name or nil,"
+                "status=ok and e.status or nil})")
+        q = self.memory.evaluate(code)
+        return q.get("value") or {}
+
+    def set_recipe(self, x: float, y: float, entity_name: str, query: str,
+                   timeout: float = 8.0) -> dict:
+        """Set a machine recipe through the "Select a recipe" browser.
+
+        Target machines must have no recipe yet: opening such a machine shows
+        the browser immediately.  Verify the result with ``recipe_of`` (the
+        client can read ``entity.get_recipe()`` even though inventory reads
+        hard-fail).
+        """
+        self.ensure_character()
+        self.close_all_ui()
+        self.open_entity(x, y, name=entity_name)
+        time.sleep(0.6)
+        ci = self.input
+        ci.click(self.RECIPE_BROWSER["search"][0], self.RECIPE_BROWSER["search"][1], 1, 30)
+        time.sleep(0.45)
+        ci.key(SCANCODES["ctrl"], True)
+        ci.tap(SCANCODES["a"], 40)
+        ci.key(SCANCODES["ctrl"], False)
+        time.sleep(0.12)
+        ci.text(query)
+        time.sleep(0.75)
+        cx, cy = self.RECIPE_BROWSER["first"]
+        ci.click(cx, cy, 1, 30)
+        time.sleep(0.12)
+        ci.click(cx, cy, 1, 30)
+        time.sleep(0.8)
+        self.close_all_ui()
+        deadline = time.time() + timeout
+        info = {}
+        while time.time() < deadline:
+            info = self.recipe_of(x, y, entity_name)
+            if info.get("recipe"):
+                break
+            time.sleep(0.4)
+        return {"ok": bool(info.get("recipe")), "query": query,
+                "recipe": info.get("recipe"), "status": info.get("status")}
 
     def pick_ground(self, x: float, y: float) -> dict:
         """Pick up item-on-ground at a world position with F."""

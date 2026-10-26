@@ -1,4 +1,4 @@
-# FactorioAgent 0.3.8（分发版）
+# FactorioAgent 0.3.9（分发版）
 
 让大模型在真实 Factorio 服务器里扮演一名**真实玩家**。不需要重写游戏，不需要给客户端装 mod；服务端用 scenario + RCON，第二个真实客户端作为 Bot 的身体。
 
@@ -36,6 +36,16 @@ python -m bridge.webui
 python tests\mcp_smoke.py
 python -m bridge.cli observe --rcon-port 27017 --rcon-password "你的密码"
 ```
+
+## 0.3.9 更新
+
+- **客户端侧建成电力与装配机**：手造 offshore pump/锅炉/蒸汽机/电线杆/实验室，走到水边用正常建造输入摆好水—管—锅炉—蒸汽机链路，杆线接通实验室；8 分钟无人值守之后继续这一局，电力网络稳定（engine 满蒸汽、lab 供电）。
+- **科研走真实 UI**：T 打开科技树 → Ctrl+F 搜索 "automation" → 选中 → Start research；实验室 GUI 放入 10 个红色瓶（Ctrl+点击背包快速转移/光标点击红瓶槽），自动化科技研究完成（`researched=true`）。
+- **装配机配方 GUI**：解锁后手造 assembling-machine-1；无配方时打开机器会弹出 "Select a recipe" 浏览器，搜索 + 双击首个结果设定配方。新增 `set_recipe`/`recipe_of` 与 MCP `client_action_set_recipe`/`client_action_recipe`；客户端 Lua 的 `entity.get_recipe()` 可读（背包读取仍不可用），因此能自校验。实测设定 iron gear wheel 后投入 69 铁板，产出 **15 齿轮**。
+- **Ctrl+点击快速转移**用于把整叠原料塞进机器输入（比光标逐格稳）。
+- **走路改为轻量探针**：0.3.7 的 24 格碰撞网格每次重规划要查 2400+ 个瓦片，长时间行走后客户端两次在 `luaD_rawrunprotected` 崩溃；现改为每次只看前方 2 格 + 八向脱困，40 分钟连续会话未再崩。
+- 客户端 MCP 现为 **49 个工具**。
+- 实测链路：矿钻→木箱→熔炉（0.3.8）→手造电厂→实验室→automation 研究→装配机产出齿轮，全程只用正常玩家输入。
 
 ## 0.3.8 更新
 

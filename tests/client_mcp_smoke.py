@@ -30,6 +30,7 @@ EXPECTED = {
     "client_action_mine_entity", "client_action_craft", "client_action_insert",
     "client_action_take", "client_action_pick_ground",
     "client_auto_start", "client_auto_status", "client_auto_stop",
+    "client_action_set_recipe", "client_action_recipe",
 }
 
 
