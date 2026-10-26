@@ -1,0 +1,6 @@
+# FactorioAgent has no third-party Python dependencies.
+# It runs on the Python standard library (3.10+).
+# Install notes: docs/DEPLOYMENT.md
+
+# Optional: background client memory/Lua reader (client_memory.py, client_mcp_server.py)
+# frida>=17

@@ -1,0 +1,11 @@
+{
+  "name": "agentbridge",
+  "version": "0.2.0",
+  "title": "Agent Bridge (embodied LLM player)",
+  "author": "Qoder",
+  "factorio_version": "2.1",
+  "dependencies": [
+    "base >= 2.1.0"
+  ],
+  "description": "Exposes a real character and a JSON job queue over RCON for LLM agents."
+}

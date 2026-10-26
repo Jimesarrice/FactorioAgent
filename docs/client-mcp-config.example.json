@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "factorio-client": {
+      "command": "python",
+      "args": ["-m", "bridge.client_mcp_server"],
+      "cwd": "<ABSOLUTE_PATH_TO_FactorioAgent>",
+      "env": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1"
+      }
+    }
+  }
+}

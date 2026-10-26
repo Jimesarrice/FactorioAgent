@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="page.title">Factorio 智能体控制台</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">F</div>
+    <div>
+      <div class="brand-title">FACTORIO <span data-i18n="brand.suffix">/ 智能体控制台</span></div>
+      <div class="brand-sub" data-i18n="brand.sub">真实玩家 LLM 操作台</div>
+    </div>
+  </div>
+  <div class="top-status">
+    <span id="conn-dot" class="dot"></span>
+    <span id="conn-label" data-i18n="status.offline">RCON 未连接</span>
+    <span class="sep"></span>
+    <span id="model-label" data-i18n="status.model">模型 —</span>
+    <span class="sep"></span>
+    <span id="bot-label" data-i18n="status.botStopped">机器人未启动</span>
+    <span class="sep"></span>
+    <label class="lang-switch">
+      <span data-i18n="lang.label">语言</span>
+      <select id="lang-select" data-i18n-aria="lang.label" aria-label="语言">
+        <option value="zh">中文</option>
+        <option value="en">English</option>
+      </select>
+    </label>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="dashboard" data-i18n="tab.dashboard">仪表盘</button>
+  <button class="tab" data-tab="decisions" data-i18n="tab.decisions">决策与推理</button>
+  <button class="tab" data-tab="settings" data-i18n="tab.settings">设置</button>
+</nav>
+
+<main>
+  <section id="tab-dashboard" class="tab-panel active">
+    <div class="section-head">
+      <h1 data-i18n="dashboard.title">实时游戏状态</h1>
+      <div class="actions">
+        <button id="btn-start" class="btn primary" data-i18n="dashboard.start">启动机器人</button>
+        <button id="btn-stop" class="btn danger" data-i18n="dashboard.stop">停止机器人</button>
+        <button id="btn-pause" class="btn" data-i18n="dashboard.pause">暂停</button>
+        <button id="btn-resume" class="btn" data-i18n="dashboard.resume">恢复</button>
+        <button id="btn-save" class="btn" data-i18n="dashboard.save">保存游戏</button>
+      </div>
+    </div>
+
+    <div class="grid cards" id="cards">
+      <div class="card"><div class="card-label" data-i18n="card.bot">机器人进程</div><div class="card-value" id="bot-process">—</div><div class="card-foot" id="bot-foot"></div></div>
+      <div class="card"><div class="card-label" data-i18n="card.player">玩家</div><div class="card-value" id="player-name">—</div><div class="card-foot" id="player-foot"></div></div>
+      <div class="card"><div class="card-label" data-i18n="card.position">坐标 / 所在表面</div><div class="card-value" id="player-pos">—</div><div class="card-foot" id="player-surface"></div></div>
+      <div class="card"><div class="card-label" data-i18n="card.health">生命值</div><div class="card-value" id="player-hp">—</div><div class="card-foot" id="player-controller"></div></div>
+      <div class="card"><div class="card-label" data-i18n="card.job">当前任务</div><div class="card-value" id="job-kind" data-i18n="common.idle">空闲</div><div class="card-foot" id="job-detail"></div></div>
+      <div class="card"><div class="card-label" data-i18n="card.tick">游戏刻 / 速度</div><div class="card-value" id="tick">—</div><div class="card-foot" id="queue"></div></div>
+    </div>
+
+    <div class="grid two-col">
+      <div class="panel">
+        <div class="panel-head"><h2 data-i18n="section.inventory">背包</h2><span class="muted" id="inv-count"></span></div>
+        <div id="inventory" class="chips empty" data-i18n="common.empty">空</div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2 data-i18n="section.research">研究</h2></div>
+        <div class="kv"><span data-i18n="research.current">当前</span><b id="research-current">—</b></div>
+        <div class="kv"><span data-i18n="research.progress">进度</span><b id="research-progress">—</b></div>
+        <div class="kv"><span data-i18n="research.queue">队列</span><b id="research-queue">—</b></div>
+        <div class="kv"><span data-i18n="research.players">在线玩家</span><b id="players-online">—</b></div>
+      </div>
+    </div>
+
+    <div class="grid two-col">
+      <div class="panel">
+        <div class="panel-head"><h2 data-i18n="section.resources">附近资源</h2></div>
+        <div id="resources" class="list empty" data-i18n="common.none">无</div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2 data-i18n="section.entities">附近实体</h2></div>
+        <div id="entities" class="list empty" data-i18n="common.none">无</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2 data-i18n="section.console">控制台指令</h2><span class="muted"><span data-i18n="console.priority">最高优先级；也支持游戏内</span> <code>/bot ...</code> <span data-i18n="console.or">或</span> <code>@bot ...</code></span></div>
+      <div class="instruct-row">
+        <input id="instruct-input" type="text" data-i18n-placeholder="console.placeholder" placeholder="例如：先做 20 个铁齿轮，然后造一个石炉并烧铁矿">
+        <button id="btn-instruct" class="btn primary" data-i18n="console.send">发送</button>
+      </div>
+      <div id="toast" class="toast"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2 data-i18n="section.botlog">机器人进程日志</h2></div>
+      <pre id="bot-log" class="logbox">—</pre>
+    </div>
+  </section>
+
+  <section id="tab-decisions" class="tab-panel">
+    <div class="section-head">
+      <h1 data-i18n="decisions.title">决策与推理</h1>
+      <div class="filters">
+        <label><input type="checkbox" id="filter-reasoning" checked> <span data-i18n="decisions.filterReasoning">推理</span></label>
+        <label><input type="checkbox" id="filter-tools" checked> <span data-i18n="decisions.filterTools">工具调用</span></label>
+        <label><input type="checkbox" id="filter-results" checked> <span data-i18n="decisions.filterResults">工具结果</span></label>
+        <label><input type="checkbox" id="autoscroll" checked> <span data-i18n="decisions.autoscroll">自动滚动</span></label>
+      </div>
+    </div>
+    <p class="muted note" data-i18n="decisions.note">这里显示模型/服务商实际返回的 reasoning（若有）以及工具决策与结果；不会伪造隐藏思维链。不同本地/云端模型的 reasoning 字段支持不同。</p>
+    <div id="feed" class="feed"><div class="empty" data-i18n="decisions.empty">启动机器人后这里会显示决策。</div></div>
+  </section>
+
+  <section id="tab-settings" class="tab-panel">
+    <div class="section-head">
+      <h1 data-i18n="settings.title">配置</h1>
+      <div class="actions">
+        <button id="btn-save-config" class="btn primary" data-i18n="settings.save">保存配置</button>
+        <button id="btn-test-models" class="btn" data-i18n="settings.testModels">测试 / 列出模型</button>
+      </div>
+    </div>
+    <p class="muted note"><span data-i18n="settings.note1">配置保存在本机</span> <code>state/webui.json</code><span data-i18n="settings.note2">。API 密钥以掩码显示，留空/保持</span> <code>***</code> <span data-i18n="settings.note3">不会覆盖原值。Web 控制台默认只绑定 127.0.0.1。</span></p>
+
+    <form id="config-form">
+      <div class="panel">
+        <div class="panel-head"><h2 data-i18n="settings.llm">LLM</h2><span id="model-test-status" class="muted"></span></div>
+        <div class="form-grid">
+          <label><span data-i18n="settings.provider">提供方</span>
+            <select name="llm.provider">
+              <option value="auto" data-i18n="settings.providerAuto">自动（本地优先，失败可回退云端）</option>
+              <option value="local" data-i18n="settings.providerLocal">本地（OpenAI-compatible）</option>
+              <option value="cloud" data-i18n="settings.providerCloud">云端（OpenAI-compatible）</option>
+            </select>
+          </label>
+          <label><span data-i18n="settings.temperature">温度</span>
+            <input name="llm.temperature" type="number" step="0.05" min="0" max="2">
+          </label>
+          <label><span data-i18n="settings.localBase">本地基础 URL</span>
+            <input name="llm.local_base_url" placeholder="http://127.0.0.1:11434/v1">
+          </label>
+          <label><span data-i18n="settings.localModel">本地模型</span>
+            <input name="llm.local_model" list="model-list" placeholder="Q3.5-9B:latest">
+          </label>
+          <label><span data-i18n="settings.localKey">本地 API 密钥（可选）</span>
+            <input name="llm.local_api_key" type="password" placeholder="***">
+          </label>
+          <label><span data-i18n="settings.cloudBase">云端基础 URL</span>
+            <input name="llm.cloud_base_url" placeholder="https://api.openai.com/v1">
+          </label>
+          <label><span data-i18n="settings.cloudModel">云端模型</span>
+            <input name="llm.cloud_model" list="model-list" placeholder="gpt-4o-mini">
+          </label>
+          <label><span data-i18n="settings.cloudKey">云端 API 密钥</span>
+            <input name="llm.cloud_api_key" type="password" placeholder="***">
+          </label>
+          <label class="check"><input name="llm.fallback_cloud" type="checkbox"> <span data-i18n="settings.fallback">本地失败时回退云端</span></label>
+        </div>
+        <datalist id="model-list"></datalist>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2 data-i18n="settings.bot">机器人</h2></div>
+        <div class="form-grid">
+          <label class="wide"><span data-i18n="settings.goal">目标</span>
+            <textarea name="bot.goal" rows="4"></textarea>
+          </label>
+          <label><span data-i18n="settings.playerName">玩家名</span>
+            <input name="bot.player_name">
+          </label>
+          <label><span data-i18n="settings.interval">间隔（秒）</span>
+            <input name="bot.interval" type="number" step="1" min="1">
+          </label>
+          <label><span data-i18n="settings.turns">每轮工具调用数</span>
+            <input name="bot.turns" type="number" step="1" min="1">
+          </label>
+          <label class="check"><input name="bot.turn_based" type="checkbox"> <span data-i18n="settings.turnBased">回合制（思考时暂停）</span></label>
+          <label class="check"><input name="bot.start_server" type="checkbox"> <span data-i18n="settings.startServer">启动服务端</span></label>
+          <label class="check"><input name="bot.start_client" type="checkbox"> <span data-i18n="settings.startClient">启动机器人客户端</span></label>
+          <label><span data-i18n="settings.serverExe">服务端可执行文件</span>
+            <input name="bot.server_exe">
+          </label>
+          <label><span data-i18n="settings.clientExe">客户端可执行文件</span>
+            <input name="bot.client_exe">
+          </label>
+          <label><span data-i18n="settings.clientPort">机器人客户端 UDP 端口</span>
+            <input name="bot.client_port" type="number">
+          </label>
+          <label><span data-i18n="settings.clientDataDir">机器人客户端数据目录</span>
+            <input name="bot.client_data_dir">
+          </label>
+          <label><span data-i18n="settings.clientMods">机器人客户端 Mod 目录</span>
+            <input name="bot.client_mod_dir">
+          </label>
+          <label><span data-i18n="settings.clientModSource">Mod 来源（Steam profile）</span>
+            <input name="bot.client_mod_source">
+          </label>
+          <label><span data-i18n="settings.serverSave">服务端存档</span>
+            <input name="bot.server_save">
+          </label>
+          <label><span data-i18n="settings.serverMods">服务端 Mod 目录</span>
+            <input name="bot.server_mods">
+          </label>
+          <label><span data-i18n="settings.serverSettings">服务端设置</span>
+            <input name="bot.server_settings">
+          </label>
+          <label><span data-i18n="settings.serverConfig">服务端配置（write-data）</span>
+            <input name="bot.server_config">
+          </label>
+          <label><span data-i18n="settings.rconHost">RCON 主机</span>
+            <input name="bot.host">
+          </label>
+          <label><span data-i18n="settings.rconPort">RCON 端口</span>
+            <input name="bot.rcon_port" type="number">
+          </label>
+          <label><span data-i18n="settings.rconPassword">RCON 密码</span>
+            <input name="bot.rcon_password" type="password">
+          </label>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2 data-i18n="settings.web">Web 控制台</h2></div>
+        <div class="form-grid">
+          <label><span data-i18n="settings.host">主机</span>
+            <input name="webui.host">
+          </label>
+          <label><span data-i18n="settings.port">端口</span>
+            <input name="webui.port" type="number">
+          </label>
+        </div>
+        <p class="muted" data-i18n="settings.webNote">修改 host/port 需要重启 Web 控制台。</p>
+      </div>
+    </form>
+  </section>
+</main>
+
+<footer>
+  <span data-i18n="footer.left">Factorio 智能体控制台</span>
+  <span class="muted" data-i18n="footer.right">仅本机访问 · 密钥不会离开这台机器</span>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

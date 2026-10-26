@@ -1,0 +1,32 @@
+{
+  "llm": {
+    "provider": "auto",
+    "local_base_url": "http://127.0.0.1:11434/v1",
+    "local_model": "Q3.5-9B:latest",
+    "local_api_key": "",
+    "cloud_base_url": "https://api.openai.com/v1",
+    "cloud_model": "gpt-4o-mini",
+    "cloud_api_key": "",
+    "fallback_cloud": true,
+    "temperature": 0.2
+  },
+  "bot": {
+    "server_exe": "C:/Factorio/bin/x64/factorio.exe",
+    "client_exe": "C:/Factorio/bin/x64/factorio.exe",
+    "server_save": "C:/FactorioAgent/server/agentbot.zip",
+    "server_mods": "C:/FactorioAgent/server/scenario-mods",
+    "server_settings": "C:/FactorioAgent/server/agentbot-server-settings.json",
+    "server_config": "",
+    "rcon_port": 27017,
+    "rcon_password": "<CHANGE_ME>",
+    "host": "127.0.0.1",
+    "player_name": "LLM-Bot",
+    "start_server": true,
+    "start_client": true,
+    "turn_based": true,
+    "interval": 8.0,
+    "turns": 8,
+    "goal": "From the crashed ship, complete Factorio: Space Age. Automate production, research, launch rockets, build space platforms, visit Vulcanus, Fulgora, Gleba and Aquilo, and finally reach the Shattered Planet."
+  },
+  "webui": {"host": "127.0.0.1", "port": 8090}
+}
