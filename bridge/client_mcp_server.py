@@ -145,6 +145,20 @@ TOOLS = [
     {"name": "client_action_pick_ground", "description": "Pick up item-on-ground at a world position with F (e.g. burner mining drill output, which drops at drop_position).",
      "inputSchema": {"type": "object", "properties": {
          "x": {"type": "number"}, "y": {"type": "number"}}, "required": ["x", "y"]}},
+    {"name": "client_auto_start", "description": "Start the unattended burner-era loop in a background thread: collect ore from the drop chest, load the furnace, collect plates, share coal, hand-craft work orders, return to the anchor. All normal client input; needs client_action_attach first.",
+     "inputSchema": {"type": "object", "properties": {
+         "drill": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+         "chest": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+         "furnace": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+         "anchor": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+         "orders": {"type": "object", "description": "recipe query -> target count"},
+         "interval": {"type": "number", "default": 20},
+         "minutes": {"type": "number", "default": 6}},
+         "required": ["drill", "chest", "furnace"]}},
+    {"name": "client_auto_status", "description": "Status and counters of the unattended burner loop.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "client_auto_stop", "description": "Stop the unattended burner loop.",
+     "inputSchema": {"type": "object", "properties": {}}},
     {"name": "client_action_walk_to", "description": "Walk to a world position with a tile-collision BFS (client Lua collision grid) and automatic replanning. Background; tolerance defaults to 0.8 tiles.",
      "inputSchema": {"type": "object", "properties": {
          "x": {"type": "number"}, "y": {"type": "number"},
@@ -183,6 +197,7 @@ class ClientMcpServer:
         self.memory_name = None
         self.input = None
         self.actions = None
+        self.auto = None
 
     def _client(self) -> ClientController:
         if self.ctrl is None:
@@ -312,6 +327,9 @@ class ClientMcpServer:
                 self.input.close()
                 self.input = None
             return json.dumps({"ok": True}, ensure_ascii=False), True, None
+        if (name.startswith("client_action_") and self.auto and self.auto.running
+                and name not in ("client_action_state", "client_action_status")):
+            raise RuntimeError("autopilot is running; call client_auto_stop first")
         if name == "client_action_attach":
             from .client_actions import ClientActions
             apid = args.get("pid") or c.pid
@@ -379,6 +397,33 @@ class ClientMcpServer:
                 raise RuntimeError("high-level action agent is not attached")
             out = self.actions.pick_ground(float(args["x"]), float(args["y"]))
             return json.dumps(out, ensure_ascii=False), True, None
+        if name == "client_auto_start":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            if self.auto and self.auto.running:
+                raise RuntimeError("autopilot already running")
+            from .client_autopilot import BurnerAutopilot, Layout
+            layout = Layout(drill=tuple(args["drill"]), chest=tuple(args["chest"]),
+                            furnace=tuple(args["furnace"]),
+                            anchor=tuple(args["anchor"]) if args.get("anchor") else None)
+            self.auto = BurnerAutopilot(
+                self.actions, layout, orders=args.get("orders") or {},
+                interval=float(args.get("interval", 20)),
+                state_path="state/autopilot_state.json",
+                log=lambda msg: print(msg, file=sys.stderr, flush=True))
+            self.auto.start(float(args.get("minutes", 6)))
+            return json.dumps({"ok": True, "status": self.auto.status()},
+                              ensure_ascii=False), True, None
+        if name == "client_auto_status":
+            if not self.auto:
+                return json.dumps({"ok": False, "running": False,
+                                   "reason": "not started"}, ensure_ascii=False), True, None
+            return json.dumps({"ok": True, **self.auto.status()}, ensure_ascii=False), True, None
+        if name == "client_auto_stop":
+            if self.auto:
+                self.auto.stop()
+            return json.dumps({"ok": True, "running": bool(self.auto and self.auto.running)},
+                              ensure_ascii=False), True, None
         if name == "client_action_walk_to":
             if not self.actions:
                 raise RuntimeError("high-level action agent is not attached")
@@ -400,6 +445,9 @@ class ClientMcpServer:
             return json.dumps({"controller": self.actions.controller_type(),
                                "state": self.actions.state()}, ensure_ascii=False), True, None
         if name == "client_action_detach":
+            if self.auto:
+                self.auto.stop()
+                self.auto = None
             if self.actions:
                 self.actions.close()
                 self.actions = None
@@ -440,7 +488,7 @@ class ClientMcpServer:
             return {"jsonrpc": "2.0", "id": mid, "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "factorio-client-control", "version": "0.3.7"},
+                "serverInfo": {"name": "factorio-client-control", "version": "0.3.8"},
                 "instructions": (
                     "Client-side input control for a running Factorio window. "
                     "Call client_list_windows/client_attach, client_focus, then use "

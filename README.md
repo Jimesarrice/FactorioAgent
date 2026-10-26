@@ -1,4 +1,4 @@
-# FactorioAgent 0.3.7（分发版）
+# FactorioAgent 0.3.8（分发版）
 
 让大模型在真实 Factorio 服务器里扮演一名**真实玩家**。不需要重写游戏，不需要给客户端装 mod；服务端用 scenario + RCON，第二个真实客户端作为 Bot 的身体。
 
@@ -36,6 +36,15 @@ python -m bridge.webui
 python tests\mcp_smoke.py
 python -m bridge.cli observe --rcon-port 27017 --rcon-password "你的密码"
 ```
+
+## 0.3.8 更新
+
+- 新增 `bridge/client_autopilot.py`：**无人值守燃烧时代循环**。按 tick 自动收矿（落点木箱）→ 装炉 → 取板 → 在矿钻/熔炉之间分配煤 → 按工单手工合成 → 偏离时走回锚点；支持独立 CLI 与客户端 MCP 的 `client_auto_start/status/stop`（后台线程）。
+- `entity_insert(..., half=True)`：右键取半叠，便于把一摞煤分给两台设备。
+- 实测：从 122 格外挖回 20 煤，启动 6 分钟循环，矿钻/熔炉持续产出并按工单合成铁齿轮；日志与 `state/autopilot_state.json` 记录每 tick 计数。
+- 客户端 MCP 现为 **47 个工具**。
+- 稳定性修复：①同一进程只允许一个输入会话（`state/client_input.lock`；两个 SDL hook 并存会让客户端崩溃）；②初始化时自动建立键盘焦点（重启后焦点为 0，注入文字会丢失）；③用 `inv[i].name` 精确定位背包槽（`get_slot` 仍不可用），取物不再误拿/放回失败；合成加 `expect` 校验并在被吞搜索时重试。
+- 说明：实体库存无法通过客户端 Lua 读取（硬错误），循环以时间片+玩家背包增量校验；有 scenario/RCON 时建议并行观察真实库存。
 
 ## 0.3.7 更新
 

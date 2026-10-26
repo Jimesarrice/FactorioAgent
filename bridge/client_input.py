@@ -14,9 +14,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
+from pathlib import Path
 
 import frida
+
+ROOT = Path(__file__).resolve().parents[1]
+LOCK_PATH = ROOT / "state" / "client_input.lock"
+_LOCK_HANDLE = None
 
 RVA = {
     "send_key": 0x1B504A0,          # SDL_SendKeyboardKeyInternal
@@ -562,12 +568,34 @@ class ClientInput:
 
     def __init__(self, pid: int, timeout: float = 20.0):
         import frida
+        global _LOCK_HANDLE
         self.frida = frida
         self.pid = pid
         self.timeout = timeout
-        self.session = frida.attach(pid)
-        self.script = self.session.create_script(JS)
-        self.script.load()
+        # Two input scripts hooking SDL in one process can crash the client
+        # when either one unloads.  Hold a cross-process lock so a second
+        # session (CLI + MCP, or a debug shell) fails fast instead.
+        LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(LOCK_PATH, "a+b")
+        try:
+            import msvcrt
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError as exc:
+            handle.close()
+            raise RuntimeError(
+                "another client input session holds state/client_input.lock; "
+                "close it first (two SDL hooks in one game process can crash "
+                "the client)") from exc
+        _LOCK_HANDLE = handle
+        self._lock_handle = handle
+        try:
+            self.session = frida.attach(pid)
+            self.script = self.session.create_script(JS)
+            self.script.load()
+        except Exception:
+            self._release_lock()
+            raise
 
     def info(self) -> dict:
         return self.script.exports_sync.sdl_info()
@@ -630,6 +658,24 @@ class ClientInput:
     def state(self) -> dict:
         return self.script.exports_sync.vm_state()
 
+    def _release_lock(self) -> None:
+        global _LOCK_HANDLE
+        handle = getattr(self, "_lock_handle", None)
+        if not handle:
+            return
+        try:
+            import msvcrt
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+        try:
+            handle.close()
+        except OSError:
+            pass
+        self._lock_handle = None
+        _LOCK_HANDLE = None
+
     def close(self) -> None:
         try:
             self.script.unload()
@@ -639,3 +685,4 @@ class ClientInput:
             self.session.detach()
         except Exception:
             pass
+        self._release_lock()

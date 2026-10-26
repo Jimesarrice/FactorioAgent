@@ -21,8 +21,9 @@
 | 组件 | 作用 |
 |---|---|
 | `bridge/client_control.py` | 查找/聚焦 Factorio 窗口，发送 WASD、鼠标点击/长按、滚轮、文本，截图 |
-| `bridge/client_mcp_server.py` | 独立 MCP stdio server，暴露 44 个 `client_*` 工具（含高层动作、合成/物资流转、后台输入与内存读取） |
-| `bridge/client_actions.py` | 0.3.6-0.3.7 高层后台动作：瓦片寻路行走/挖矿/伐木/合成/取放物资/放置/打开 GUI |
+| `bridge/client_mcp_server.py` | 独立 MCP stdio server，暴露 47 个 `client_*` 工具（含高层动作、合成/物资流转、无人值守循环、后台输入与内存读取） |
+| `bridge/client_actions.py` | 0.3.6-0.3.8 高层后台动作：瓦片寻路行走/挖矿/伐木/合成/取放物资/放置/打开 GUI |
+| `bridge/client_autopilot.py` | 0.3.8 无人值守燃烧时代循环：收矿/装炉/取板/分煤/工单合成/回锚点 |
 | `bridge/client_input.py` | 0.3.5 后台 SDL 动作通道：键盘/文本/虚拟鼠标，不要求前台 |
 | `bridge/client_memory.py` | Frida 只读 Lua 桥：抓取 lua_State、在游戏线程读取玩家/背包/附近环境 |
 | `docs/client-mcp-config.example.json` | MCP 客户端配置示例 |
@@ -92,6 +93,35 @@
 **燃烧矿钻（2.1）没有输出槽**：产物掉在 `drop_position` 前方的地面。落点被角色占住时状态为 38（waiting_for_space_in_destination）。处理：把木箱放在落点（钻会自动装入），或 `client_action_pick_ground` 用 F 拾取。实测闭环：矿钻→落点木箱→Ctrl+点击箱子把矿石转进背包。
 
 实测流程（3440×1440，UI 1.25）：挖树取木 → 合成木箱 → 石炉进矿/进木 → 出 8 铁板 → 合成铁齿轮 → 燃烧矿钻放在矿上 → 木箱收集 → 取矿回背包。
+
+## 1.8 无人值守循环（0.3.8，`client_autopilot`）
+
+`BurnerAutopilot` 按固定间隔执行一个安全 tick：
+
+1. 从落点木箱 Ctrl+点击收矿；
+2. 把背包里的矿整叠装进石炉；
+3. 从熔炉输出 Ctrl+点击取板；
+4. 交替给矿钻/熔炉分煤（右键取半叠，`entity_insert(half=True)`）；
+5. 按工单把某配方补到目标数量（每 tick 最多合成一次）；
+6. 离锚点过远时走回去。
+
+独立运行：
+
+```bash
+python -m bridge.client_autopilot --pid 55128 --name LLM-Bot   --drill=-56,-2 --chest=-56.5,-3.5 --furnace=-49,6 --anchor=-52.7,1.3   --order "iron gear wheel=10" --interval 20 --minutes 6   --state state/autopilot_state.json
+```
+
+MCP：`client_auto_start`（参数 drill/chest/furnace/anchor/orders/interval/minutes）、`client_auto_status`、`client_auto_stop`。循环运行时其它 `client_action_*`（除 state/status）会被拒绝，避免两个动作流抢同一个虚拟鼠标。
+
+**小实体定位修复（0.3.8）**：1×1 容器在默认缩放下可点击区只有约 9 px，且渲染位置与 `position` 会有几个像素偏差；单点瞄准会偶发选中下面的矿。现在 `open_entity(name=...)` 先做**小范围悬停搜索**（±22 px，步长 6 px）确认 `selected == name` 再点击，背包/熔炉/木箱的打开因此稳定。实测对落点木箱一次取回 67 铁矿。
+
+**0.3.8 的三个稳定性修复（都是实测踩出来的）**：
+
+1. **单会话锁**：同一游戏进程里两个 Frida 输入脚本同时 hook SDL，任一卸载都可能让客户端崩溃（本轮实测崩过一次）。`ClientInput` 现在持有 `state/client_input.lock`，第二个会话直接报错；循环运行期间只允许 RCON/只读内存观察。
+2. **输入焦点**：客户端重启后 SDL 键盘焦点为 0，注入的文字全部丢失（合成搜索为空）。`ClientActions` 初始化时自动 `enable(1720,720)`，同时建立虚拟鼠标与键盘焦点。
+3. **精确背包槽**：客户端 Lua 的 `inv[i].name`（1..40）是可读的（`get_slot` 仍会硬错误），所以取物前先解析物品所在槽，不再“逐格试拿再放回”；避免误拿木箱时回放失败卡住循环。合成还加了 `expect` 校验：搜索结果被吞时（点到了默认列表首格）会重开界面重试一次。
+
+**限制**：实体库存无法通过客户端 Lua 读取（对非玩家实体调用 `get_inventory` 会硬错误），循环以时间片 + 玩家背包增量计数；煤的分配是启发式（半叠轮换），没有真实库存反馈。长时运行应在有 scenario/RCON 的服务器上并行观察，或定期人工校准。
 
 ## 2. 后台内存/Lua 读取（Frida）
 

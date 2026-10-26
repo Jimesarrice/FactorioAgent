@@ -51,15 +51,23 @@ class ClientActions:
     def __init__(self, pid: int, name: str | None = None,
                  inventory_origin: tuple[float, float] = (1223.0, 523.0),
                  inventory_slot: float = 50.0, inventory_columns: int = 10,
-                 px_per_tile_zoom1: float = 42.6666667):
+                 px_per_tile_zoom1: float = 42.6666667,
+                 screen_center: tuple[float, float] = (1720.0, 720.0),
+                 enable_input: bool = True):
         self.pid = pid
         self.name = name
         self.input = ClientInput(pid)
+        # Activate the virtual mouse; this also sets SDL keyboard focus, which
+        # Factorio needs before it accepts injected text (search fields).
+        if enable_input:
+            self.input.enable(screen_center[0], screen_center[1])
         self.memory = ClientMemory(pid)
         self.inventory_origin = inventory_origin
         self.inventory_slot = inventory_slot
         self.inventory_columns = inventory_columns
         self.px_per_tile_zoom1 = px_per_tile_zoom1
+        self.screen_center = screen_center
+        self._view_normalized = False
 
     # ------------------------------------------------------------------ state
     def controller_type(self) -> int | None:
@@ -156,6 +164,22 @@ return helpers.table_to_json({
             self.input.tap(SCANCODES["e"], 60)
             time.sleep(0.4)
             st = self.state()
+        if st.get("controller") != 1:
+            self.input.tap(SCANCODES["m"], 60)
+            time.sleep(1.0)
+            st = self.state()
+            if st.get("controller") != 1:
+                raise RuntimeError("could not enter the character controller")
+        if not self._view_normalized:
+            # A reconnected client can keep a detached map camera even while
+            # controller == 1 (screen mapping then misses every small entity).
+            # M -> remote view -> M recenters on the character.
+            self.input.tap(SCANCODES["m"], 60)
+            time.sleep(1.0)
+            self.input.tap(SCANCODES["m"], 60)
+            time.sleep(1.0)
+            st = self.state()
+            self._view_normalized = True
         return st
 
     def close_ui(self) -> dict:
@@ -211,49 +235,60 @@ return helpers.table_to_json({
             time.sleep(0.6)
         return self.state()
 
-    def craft(self, query: str, count: int = 1, timeout: float = 20.0) -> dict:
+    def _craft_once(self, query: str, count: int, timeout: float) -> tuple[dict, dict]:
+        self.close_character_screen()
+        self.open_character_screen()
+        time.sleep(0.6)
+        ci = self.input
+        # Clicking the magnifier is more deterministic than Ctrl+F right after
+        # the character screen opens (the shortcut is occasionally swallowed).
+        ci.click(self.CRAFT_SEARCH[0], self.CRAFT_SEARCH[1], 1, 30)
+        time.sleep(0.45)
+        ci.key(SCANCODES["ctrl"], True)
+        ci.tap(SCANCODES["a"], 40)
+        ci.key(SCANCODES["ctrl"], False)
+        time.sleep(0.12)
+        ci.text(query)
+        time.sleep(0.7)
+        before = {i["name"]: int(i["count"]) for i in self.state().get("inventory", [])}
+        for _ in range(max(1, int(count))):
+            ci.click(self.CRAFT_FIRST[0], self.CRAFT_FIRST[1], 1, 30)
+            time.sleep(0.22)
+        deadline = time.time() + timeout
+        gained: dict[str, int] = {}
+        st = self.state()
+        while time.time() < deadline:
+            st = self.state()
+            inv = {i["name"]: int(i["count"]) for i in st.get("inventory", [])}
+            gained = {k: v - before.get(k, 0) for k, v in inv.items()
+                      if v > before.get(k, 0)}
+            if gained:
+                break
+            time.sleep(0.3)
+        return gained, st
+
+    def craft(self, query: str, count: int = 1, timeout: float = 20.0,
+              expect: str | None = None) -> dict:
         """Hand-craft via the searchable crafting list (normal GUI input).
 
         ``query`` is the English recipe text shown in the search (e.g.
-        "wooden chest").  One click on the first result queues one craft;
-        shift-click would queue five but the plain click keeps control simple.
+        "wooden chest").  ``expect`` is the internal item name; when given and
+        the first click produces something else (a swallowed search made the
+        unfiltered list's first cell get clicked), the craft is retried once.
         """
         self._ensure_character()
-        # Reopen the screen so the crafting search never carries a stale
-        # query or an already-open search field from a previous call.
-        self.close_character_screen()
-        self.open_character_screen()
-        ci = self.input
+        gained: dict[str, int] = {}
+        st = self.state()
         try:
-            ci.key(SCANCODES["ctrl"], True)
-            ci.tap(SCANCODES["f"], 40)
-            ci.key(SCANCODES["ctrl"], False)
-            time.sleep(0.45)
-            ci.key(SCANCODES["ctrl"], True)
-            ci.tap(SCANCODES["a"], 40)
-            ci.key(SCANCODES["ctrl"], False)
-            time.sleep(0.15)
-            ci.text(query)
-            time.sleep(0.55)
-            before = {i["name"]: int(i["count"]) for i in self.state().get("inventory", [])}
-            for _ in range(max(1, int(count))):
-                ci.click(self.CRAFT_FIRST[0], self.CRAFT_FIRST[1], 1, 30)
-                time.sleep(0.22)
-            deadline = time.time() + timeout
-            gained: dict[str, int] = {}
-            st = self.state()
-            while time.time() < deadline:
-                st = self.state()
-                inv = {i["name"]: int(i["count"]) for i in st.get("inventory", [])}
-                gained = {k: v - before.get(k, 0) for k, v in inv.items()
-                          if v > before.get(k, 0)}
-                if gained:
-                    break
-                time.sleep(0.3)
+            gained, st = self._craft_once(query, count, timeout)
+            if expect and expect not in gained:
+                gained, st = self._craft_once(query, count, timeout)
         finally:
             self.close_character_screen()
-        return {"ok": bool(gained), "query": query, "requested": count,
-                "gained": gained, "inventory": self.state().get("inventory")}
+        ok = bool(gained) and (expect is None or expect in gained)
+        return {"ok": ok, "query": query, "requested": count,
+                "expected": expect, "gained": gained,
+                "inventory": st.get("inventory")}
 
     # ---------------------------------------------------------------- geometry
     def _screen_for(self, st: dict, x: float, y: float) -> tuple[float, float, float]:
@@ -719,47 +754,70 @@ return helpers.table_to_json({
         time.sleep(0.35)
         return self.state()
 
-    def _pick_from_open_gui(self, item: str, origin: tuple[float, float]) -> dict:
-        """Pick a stack from the character panel docked to an entity window."""
+    def _main_inventory_slot(self, item: str) -> int | None:
+        """Read the exact main-inventory slot of an item (read-only Lua)."""
+        code = ("local p=game.get_player('LLM-Bot'); local inv=p.get_main_inventory(); "
+                "for i=1,40 do local s=inv[i]; "
+                f"if s and s.valid_for_read and s.name=={item!r} then "
+                "return helpers.table_to_json({ok=true,i=i,count=s.count}) end end; "
+                "return helpers.table_to_json({ok=true,i=nil})")
+        q = self.memory.evaluate(code)
+        return (q.get("value") or {}).get("i")
+
+    def _pick_from_open_gui(self, item: str, origin: tuple[float, float],
+                            half: bool = False) -> dict:
+        """Pick a stack (or half a stack with a right click) from the
+        character panel docked to an entity window.
+
+        The slot is resolved by reading ``inv[i].name`` through the read-only
+        Lua bridge, so no other stack is ever picked up by mistake.
+        """
         st = self.state()
         if st.get("cursor"):
             raise RuntimeError(f"cursor busy with {st.get('cursor')}")
-        for index in range(1, 31):
-            col = (index - 1) % self.inventory_columns
-            row = (index - 1) // self.inventory_columns
-            sx = origin[0] + col * self.inventory_slot
-            sy = origin[1] + row * self.inventory_slot
-            self.input.click(sx, sy, 1, 30)
-            time.sleep(0.28)
-            cur = self.state().get("cursor")
-            if cur == item:
-                return self.state()
-            if cur:
-                self.input.click(sx, sy, 1, 30)
-                time.sleep(0.25)
-                if self.state().get("cursor"):
-                    raise RuntimeError(f"cannot return {cur} to slot {index}")
-        raise RuntimeError(f"item {item!r} not found in the open inventory panel")
+        index = self._main_inventory_slot(item)
+        if not index:
+            raise RuntimeError(f"item {item!r} not found in the main inventory")
+        col = (index - 1) % self.inventory_columns
+        row = (index - 1) // self.inventory_columns
+        sx = origin[0] + col * self.inventory_slot
+        sy = origin[1] + row * self.inventory_slot
+        self.input.click(sx, sy, 3 if half else 1, 30)
+        time.sleep(0.3)
+        cur = self.state().get("cursor")
+        if cur != item:
+            raise RuntimeError(f"expected to pick {item!r} from slot {index}, got {cur!r}")
+        return self.state()
 
     def entity_insert(self, x: float, y: float, entity_name: str,
-                      item: str, slot: str = "input") -> dict:
-        """Open an entity and move one player stack into one of its slots."""
+                      item: str, slot: str = "input", half: bool = False) -> dict:
+        """Open an entity and move one player stack into one of its slots.
+
+        ``half=True`` right-clicks the player stack first, so only half of it
+        is transferred (useful for sharing fuel between machines).
+        """
         geo = self.ENTITY_GUI.get(entity_name)
         if not geo:
             raise RuntimeError(f"no GUI layout known for {entity_name}")
-        st = self.open_entity(x, y)
+        st = self.open_entity(x, y, name=entity_name)
         if st.get("cursor"):
             self.input.tap(SCANCODES["q"], 50)
             time.sleep(0.25)
-        self._pick_from_open_gui(item, geo["char"])
+        before = self.inventory_count(item)
+        self._pick_from_open_gui(item, geo["char"], half=half)
         self.input.click(geo[slot][0], geo[slot][1], 1, 30)
         time.sleep(0.4)
         st = self.state()
-        if st.get("cursor"):
-            raise RuntimeError(f"could not place {item} into {entity_name}.{slot}")
-        self.input.tap(SCANCODES["e"], 60)
+        leftover = st.get("cursor")
+        self.input.tap(SCANCODES["e"], 60)  # closing returns cursor leftovers
         time.sleep(0.5)
-        return self.state()
+        st = self.state()
+        if st.get("cursor"):
+            raise RuntimeError(f"cursor still holds {st.get('cursor')} after inserting into {entity_name}")
+        after = {i["name"]: int(i["count"]) for i in st.get("inventory", [])}
+        moved = before - after.get(item, 0)
+        return {**st, "inserted": item, "moved": moved,
+                "leftover_on_cursor": leftover}
 
     def entity_take(self, x: float, y: float, entity_name: str,
                     slot: str = "output") -> dict:
@@ -774,7 +832,7 @@ return helpers.table_to_json({
                 "burner drills drop their output on the ground - use a chest "
                 "at the drop position or pick_ground()")
         before = {i["name"]: int(i["count"]) for i in self.state().get("inventory", [])}
-        self.open_entity(x, y)
+        self.open_entity(x, y, name=entity_name)
         self.mod_click(geo[slot][0], geo[slot][1], "ctrl")
         st = self.state()
         if st.get("cursor"):
@@ -806,7 +864,39 @@ return helpers.table_to_json({
                 "inventory": st.get("inventory")}
 
     # ----------------------------------------------------------------- detect
-    def open_entity(self, x: float, y: float) -> dict:
+    def _screen_of(self, x: float, y: float) -> tuple[float, float]:
+        st = self.state()
+        scale = self.px_per_tile_zoom1 * float(st["zoom"])
+        return (self.screen_center[0] + (x - st["pos"]["x"]) * scale,
+                self.screen_center[1] + (y - st["pos"]["y"]) * scale)
+
+    def aim_entity(self, x: float, y: float, name: str,
+                   radius: float = 22.0, step: float = 6.0) -> dict:
+        """Hover-search a small entity by name before clicking it.
+
+        A 1x1 container's clickable area is ~9 px wide at the default zoom and
+        the rendered position can sit a few pixels away from ``position``;
+        probing a small spiral makes GUI opening reliable.
+        """
+        base_x, base_y = self._screen_of(x, y)
+        offsets = [(0.0, 0.0)]
+        r = step
+        while r <= radius:
+            for dx, dy in ((r, 0), (-r, 0), (0, r), (0, -r),
+                           (r, r), (r, -r), (-r, r), (-r, -r)):
+                offsets.append((dx, dy))
+            r += step
+        last = None
+        for dx, dy in offsets:
+            self.input.move(base_x + dx, base_y + dy)
+            time.sleep(0.28)
+            last = self.state()
+            if last.get("selected") == name:
+                return last
+        raise RuntimeError(f"could not hover {name!r} near ({x},{y}); "
+                           f"last selection {last.get('selected') if last else None!r}")
+
+    def open_entity(self, x: float, y: float, name: str | None = None) -> dict:
         self.ensure_character()
         self.close_all_ui()
         st = self.state()
@@ -817,7 +907,7 @@ return helpers.table_to_json({
         if math.hypot(x - px, y - py) > 8.5:
             self.walk_to(x, y, tolerance=6.0, timeout=120)
             st = self.state()
-        st = self.aim_world(x, y)
+        st = self.aim_entity(x, y, name) if name else self.aim_world(x, y)
         self.input.click_pair(1, 40)
         time.sleep(0.8)
         return self.state()

@@ -1,6 +1,6 @@
 # Factorio LLM Agent Connector
 
-> 分发版部署请先阅读 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。当前分发版 **0.3.7** 已修复 2026-10-25 MCP 全流程实测发现的问题，并加入同机 Steam 共存、客户端输入与后台内存读取；本文档中的 `J:\...` 路径是作者开发环境的示例，分发版请用 `deploy/configure.py` 生成本机配置。
+> 分发版部署请先阅读 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。当前分发版 **0.3.8** 已修复 2026-10-25 MCP 全流程实测发现的问题，并加入同机 Steam 共存、客户端输入与后台内存读取；本文档中的 `J:\...` 路径是作者开发环境的示例，分发版请用 `deploy/configure.py` 生成本机配置。
 
 让大模型在**真实运行的 Factorio 服务器**里扮演一名角色：会走路、会挖矿、会手搓、会造建筑、会装炉冶炼，能被虫群攻击，也会存档/读档。没有 GUI、没有截图识别、没有伪造游戏状态。
 

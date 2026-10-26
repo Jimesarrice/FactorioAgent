@@ -1,10 +1,18 @@
 # 部署与运维手册（分发版）
 
-版本：0.3.7（客户端后台全自动：寻路/挖矿/合成/物资流转 + SDL 输入 + 内存读取 + 同机 Steam 共存）  
+版本：0.3.8（客户端无人值守循环 + 寻路/挖矿/合成/物资流转 + SDL 输入 + 内存读取 + 同机 Steam 共存）  
 适用：Windows 10/11（真实玩家模式）；Linux 可运行 headless 服务端，但第二真实客户端未做完整验证。  
 游戏：Factorio **2.1.x**，需要 **Space Age** DLC（真实玩家/太空平台功能依赖它）。
 
 ---
+
+## 0. 0.3.8 更新摘要
+
+- 新增 `bridge/client_autopilot.py`：无人值守燃烧时代循环（收矿→装炉→取板→分煤→工单合成→回锚点），可独立 CLI 或 MCP 后台线程运行。
+- `entity_insert(half=True)` 右键取半叠，用于给矿钻/熔炉分煤。
+- `open_entity(name=...)` 改为小范围悬停搜索后再点击，修复 1×1 容器（落点木箱）偶发选中下方矿的问题；实测一次取回 67 铁矿。
+- 客户端 MCP 47 个 `client_*` 工具。
+- 已知限制：实体库存无法从客户端 Lua 读取，循环用时间片+背包增量；煤分配为启发式。
 
 ## 0. 0.3.7 更新摘要
 
@@ -49,8 +57,9 @@
 
 
 - `bridge/client_control.py`：Win32 窗口/键鼠/截图控制。
-- `bridge/client_mcp_server.py`：独立 MCP server，44 个 `client_*` 工具（0.3.7 含合成/物资流转），截图可内联返回图片。
-- `bridge/client_actions.py`：0.3.7 高层后台动作（寻路/挖矿/伐木/合成/取放物资/放置/打开）。
+- `bridge/client_mcp_server.py`：独立 MCP server，47 个 `client_*` 工具（0.3.8 含无人值守循环），截图可内联返回图片。
+- `bridge/client_actions.py`：0.3.8 高层后台动作（寻路/挖矿/伐木/合成/取放物资/放置/打开）。
+- `bridge/client_autopilot.py`：0.3.8 无人值守循环。
 - `bridge/client_input.py`：0.3.5 后台 SDL 动作通道（键盘/虚拟鼠标），不要求窗口前台。
 - 适用于原版 freeplay Host（例如 204）；输入类工具需要前台，`client_memory_*` 通过 Frida 只读 Lua 桥在后台读取位置/背包/附近资源。
 - 文档：[CLIENT-INJECTION.md](CLIENT-INJECTION.md)。
@@ -103,7 +112,7 @@ FactorioAgent 让大模型在**真实运行的 Factorio 服务器**里扮演一�
 ## 2. 分发包内容
 
 ```
-FactorioAgent-0.3.7/
+FactorioAgent-0.3.8/
 ├─ README.md                    项目说明
 ├─ VERSION                     版本号
 ├─ LICENSE                     MIT
@@ -693,21 +702,21 @@ python -m bridge.cli stop --rcon-port 27017 --rcon-password "你的密码"
 
 每个发布 zip 旁会提供：
 
-- `FactorioAgent-0.3.7.zip`
-- `FactorioAgent-0.3.7.zip.sha256`
+- `FactorioAgent-0.3.8.zip`
+- `FactorioAgent-0.3.8.zip.sha256`
 - `MANIFEST.txt`（包内）
 
 Windows 校验：
 
 ```powershell
-Get-FileHash .\FactorioAgent-0.3.7.zip -Algorithm SHA256
-Get-Content .\FactorioAgent-0.3.7.zip.sha256
+Get-FileHash .\FactorioAgent-0.3.8.zip -Algorithm SHA256
+Get-Content .\FactorioAgent-0.3.8.zip.sha256
 ```
 
 Linux/macOS：
 
 ```bash
-sha256sum FactorioAgent-0.3.7.zip
+sha256sum FactorioAgent-0.3.8.zip
 ```
 
 ---

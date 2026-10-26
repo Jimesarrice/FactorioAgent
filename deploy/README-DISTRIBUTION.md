@@ -1,4 +1,4 @@
-# FactorioAgent 0.3.7（分发版）
+# FactorioAgent 0.3.8（分发版）
 
 让大模型在真实 Factorio 服务器里扮演一名**真实玩家**。不需要重写游戏，不需要给客户端装 mod；服务端用 scenario + RCON，第二个真实客户端作为 Bot 的身体。
 
@@ -36,6 +36,12 @@ python -m bridge.webui
 python tests\mcp_smoke.py
 python -m bridge.cli observe --rcon-port 27017 --rcon-password "你的密码"
 ```
+
+## 0.3.8 更新
+
+- 新增无人值守燃烧时代循环 `bridge/client_autopilot.py` 与 `client_auto_start/status/stop`。
+- 半叠插入、1×1 容器悬停搜索定位修复。
+- 客户端 MCP 47 个工具。
 
 ## 0.3.7 更新
 

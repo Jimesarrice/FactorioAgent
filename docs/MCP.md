@@ -166,7 +166,7 @@ python tests/mcp_smoke.py          # initialize + tools/list，53 个工具
 python tests/mcp_smoke.py --live   # 连接运行中的游戏，调用只读工具
 ```
 
-2026-10-25 全流程实测报告见 [runs/MCP-FULLFLOW-TEST-2026-10-25.md](runs/MCP-FULLFLOW-TEST-2026-10-25.md)。MCP 0.3.7（客户端后台全自动：寻路/合成/物资流转 + 同机共存 + 后台输入/内存），53 tools；客户端 MCP 44 tools；`initialize`、`tools/list`、`get_state`、`decision_context`、`ping`、`observe`、`scan`、`nearby_entities`、`find_water`、`recipe_info`、`recipes_query`、`technologies`、`tech_tree`、`entity_detail`、`production_stats`、`alerts`、`resource_patches`、`wire_poles`、`get_inbox`、`instruct`、`get_events`、`get_blueprints`、`get_platforms`、`pause`/`resume`、`set_speed`、`set_eval(false)`、`submit_job`+`wait` 均返回成功；`tools/call` 错误以 `isError:true` 返回，不中断会话。
+2026-10-25 全流程实测报告见 [runs/MCP-FULLFLOW-TEST-2026-10-25.md](runs/MCP-FULLFLOW-TEST-2026-10-25.md)。MCP 0.3.8（客户端无人值守循环 + 寻路/合成/物资流转 + 同机共存 + 后台输入/内存），53 tools；客户端 MCP 47 tools；`initialize`、`tools/list`、`get_state`、`decision_context`、`ping`、`observe`、`scan`、`nearby_entities`、`find_water`、`recipe_info`、`recipes_query`、`technologies`、`tech_tree`、`entity_detail`、`production_stats`、`alerts`、`resource_patches`、`wire_poles`、`get_inbox`、`instruct`、`get_events`、`get_blueprints`、`get_platforms`、`pause`/`resume`、`set_speed`、`set_eval(false)`、`submit_job`+`wait` 均返回成功；`tools/call` 错误以 `isError:true` 返回，不中断会话。
 
 ## 6.5 客户端输入 MCP（无 RCON/无服务端 mod）
 
@@ -176,10 +176,11 @@ python tests/mcp_smoke.py --live   # 连接运行中的游戏，调用只读工�
 python -m bridge.client_mcp_server
 ```
 
-它提供 44 个 `client_*` 工具（0.3.7 新增 5 个：craft/mine_entity/insert/take/pick_ground）：
+它提供 47 个 `client_*` 工具（0.3.8 新增 3 个：auto_start/auto_status/auto_stop）：
 
 - 输入：窗口列表/绑定/聚焦、截图（可内联返回图片）、按键、长按、走路、鼠标点击/长按、滚轮、文本、地图和背包开关；需要前台窗口。
 - 高层后台动作：`client_action_attach/state/mine/mine_entity/pick/build/craft/insert/take/pick_ground/open/walk_to/stop/close_ui/status/detach`；使用正常客户端输入 + 只读 Lua 状态，不需要窗口焦点。
+- 无人值守循环：`client_auto_start`（收矿/装炉/取板/分煤/工单合成/回锚点）、`client_auto_status`、`client_auto_stop`；也可用 `python -m bridge.client_autopilot` 独立运行。
 - 后台读取：`client_memory_attach/status/observe/inventory/detach`，通过 Frida 只读 Lua 桥读取位置、血量、背包、附近资源/实体和研究，不需要窗口焦点。
 
 输入工具不修改内存/游戏状态；内存工具只读，但需要安装 `frida`。
