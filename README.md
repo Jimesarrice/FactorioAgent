@@ -1,4 +1,4 @@
-# FactorioAgent 0.3.6（分发版）
+# FactorioAgent 0.3.7（分发版）
 
 让大模型在真实 Factorio 服务器里扮演一名**真实玩家**。不需要重写游戏，不需要给客户端装 mod；服务端用 scenario + RCON，第二个真实客户端作为 Bot 的身体。
 
@@ -36,6 +36,18 @@ python -m bridge.webui
 python tests\mcp_smoke.py
 python -m bridge.cli observe --rcon-port 27017 --rcon-password "你的密码"
 ```
+
+## 0.3.7 更新
+
+- **修复后台 GUI 点击不生效的根因**：SDL 在合成按下与松开之间会被真实鼠标事件清掉按键状态，导致“松开”事件根本不产生（GUI 按钮要抬起才触发）。`ClientInput.click()` 改为在**同一个游戏线程作业内**原子地发送 down+up（`clickPair`），并把合成的按键事件钉在虚拟光标坐标上；实测关闭窗口、点配方、点背包格子全部可用。
+- **后台手工合成**：新增 `client_action_craft` / `ClientActions.craft()`——E 打开角色界面、Ctrl+F 搜索配方、Ctrl+A 替换查询、点击第一个结果；实测合成木箱、铁齿轮。
+- **实体物资流转**：新增 `client_action_insert` / `client_action_take` / `client_action_pick_ground`。插入用光标法（从角色面板取一叠→点实体槽位）；取出用 Factorio 的 **Ctrl+左键快速转移**（实测把熔炉 8 块铁板、箱子 6 块铁矿转入背包）。内置石炉/燃烧矿钻/木箱的槽位坐标（3440×1440, UI 1.25）。
+- **瓦片 BFS 寻路**：`walk_to` 改为读取客户端 `tile.collides_with('player')` 碰撞网格做 BFS，边走边重规划；实测绕过树林/残骸走 45 格回熔炉。
+- **新增 `client_action_mine_entity`**：按类型/名字挖最近的树或石头（含寻路与右键长按），实测采集木头。
+- **背包槽位测量修正**：格距 50 px（不是 44），角色界面首格中心 (1223,523)。
+- 客户端 MCP 现为 **44 个 `client_*` 工具**。实测闭环：燃烧矿钻落在矿脉→把矿石吐在落点→落点放木箱自动收集→Ctrl+点击箱内矿石转入背包。
+- 发现：Factorio 2.1 的燃烧矿钻**没有输出槽**，产物直接掉在 `drop_position`（前方地面）；落点被角色占住时状态 38（waiting_for_space_in_destination）。用木箱放在落点或按 F 拾取。
+- 仍未实现：射击/战斗、载具、蓝图与远程视图内的客户端侧点击（这些仍走服务端工具链更稳）、平台侧自动化。
 
 ## 0.3.6 更新
 

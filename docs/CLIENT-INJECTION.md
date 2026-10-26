@@ -21,8 +21,8 @@
 | 组件 | 作用 |
 |---|---|
 | `bridge/client_control.py` | 查找/聚焦 Factorio 窗口，发送 WASD、鼠标点击/长按、滚轮、文本，截图 |
-| `bridge/client_mcp_server.py` | 独立 MCP stdio server，暴露 39 个 `client_*` 工具（含高层动作、后台输入与内存读取） |
-| `bridge/client_actions.py` | 0.3.6 高层后台动作：行走/挖矿/取物/放置/打开 GUI |
+| `bridge/client_mcp_server.py` | 独立 MCP stdio server，暴露 44 个 `client_*` 工具（含高层动作、合成/物资流转、后台输入与内存读取） |
+| `bridge/client_actions.py` | 0.3.6-0.3.7 高层后台动作：瓦片寻路行走/挖矿/伐木/合成/取放物资/放置/打开 GUI |
 | `bridge/client_input.py` | 0.3.5 后台 SDL 动作通道：键盘/文本/虚拟鼠标，不要求前台 |
 | `bridge/client_memory.py` | Frida 只读 Lua 桥：抓取 lua_State、在游戏线程读取玩家/背包/附近环境 |
 | `docs/client-mcp-config.example.json` | MCP 客户端配置示例 |
@@ -69,8 +69,29 @@
 - 后台右键 up 不会让客户端生成 StopMining；用 `aim_blank`（光标移到无实体地块）停止，服务器 mining 会变 false。停止后客户端仍可能保持“右键按住”状态；此时**不要**把光标移到矿/建筑上做放置，先做地面放置或直接开始下一次采矿。
 - 矿钻必须**先**放到矿上（右键未按住时），再开始长按采矿；`client_action_build(on_ore=true)` 在检测到 mining 时会拒绝。
 - `opened` 实体 GUI 的验证不在安全 Lua 状态里（部分客户端会抛硬错误）；用截图或后续工具确认。
-- 背包槽位几何默认 `(1228,524)`、44px、10 列（3440×1440，UI 1.25）；其他分辨率在构造 `ClientActions` 时覆盖。
+- 背包槽位几何默认 `(1223,523)`、50px、10 列（3440×1440，UI 1.25）；实体窗口内的角色面板首格坐标不同（石炉 508、矿钻 518），见 `ClientActions.ENTITY_GUI`。
 - 仍建议在自己的服务器上优先用 scenario 的 `mine_entity`/建造/蓝图工具；客户端高层动作用于没有 scenario/RCON 的原版 Host。
+
+## 1.7 合成、物资流转与寻路（0.3.7）
+
+**后台点击的根因修复。** SDL 的 `SDL_PrivateSendMouseButton` 在“按下”和“松开”之间需要一个仍然存在的按键状态；真实鼠标事件（用户在其他显示器移动/点击）会把状态清掉，于是合成器里的“松开”直接被丢弃，GUI 按钮永远不触发。现在 `ClientInput.click()` 在**同一个游戏线程作业**里原子地发送 down+up（`clickPair`），并在事件过滤里把合成按键钉到虚拟光标坐标；真实鼠标的按键事件仍然丢弃。`click_pair(button)` 也用于清理“按住不放”的状态。
+
+新增高层动作：
+
+| 工具 | 行为 |
+|---|---|
+| `client_action_craft` | E 打开角色界面 → Ctrl+F 搜索 → Ctrl+A 清空旧查询 → 输入配方文本 → 点第一个结果（每点一次合成一次） |
+| `client_action_mine_entity` | 按类型/名字（如 `type=tree, item=wood`）走到并挖掉最近的树/石头 |
+| `client_action_insert` | 打开实体 → 从角色面板取一叠 → 点实体槽位（input/fuel/slot1） |
+| `client_action_take` | 打开实体 → **Ctrl+左键**对应槽位，把内容快速转移进背包 |
+| `client_action_pick_ground` | 光标指向地面物品后按 F 拾取 |
+| `client_action_close_ui` | 幂等地关闭实体 GUI 与角色界面（E 探测，必要时再按一次 E） |
+
+寻路：`walk_to` 不再只靠贪心与侧移，而是用客户端 Lua 读取 `tile.collides_with('player')` 生成半径 24 的碰撞网格，Python 端 BFS 出路径，按路点前进并在卡住时重规划；实测穿过树林与残骸走 45 格。
+
+**燃烧矿钻（2.1）没有输出槽**：产物掉在 `drop_position` 前方的地面。落点被角色占住时状态为 38（waiting_for_space_in_destination）。处理：把木箱放在落点（钻会自动装入），或 `client_action_pick_ground` 用 F 拾取。实测闭环：矿钻→落点木箱→Ctrl+点击箱子把矿石转进背包。
+
+实测流程（3440×1440，UI 1.25）：挖树取木 → 合成木箱 → 石炉进矿/进木 → 出 8 铁板 → 合成铁齿轮 → 燃烧矿钻放在矿上 → 木箱收集 → 取矿回背包。
 
 ## 2. 后台内存/Lua 读取（Frida）
 

@@ -153,6 +153,8 @@ function firstKeyboard() {
 let vm = { active: false, x: 0, y: 0, win: null, buttons: 0, mouseID: 0 };
 let fakeSrc = null;
 let winID = 0;
+let evLog = [];
+let pendingBtn = { state: 0, t: 0 };  // 1 = synthetic press awaiting its event, 2 = release
 function pushWindowEvent(type, windowID) {
   try {
     const ev = Memory.alloc(128);
@@ -185,18 +187,48 @@ function syncSdlMouse() {
     }
   } catch (e) {}
 }
+function logEvent(type, ox, oy, bx, by, action, win) {
+  if (evLog.length > 120) evLog.shift();
+  evLog.push({ type, ox, oy, bx, by, action, win, vm: vm.active, vx: vm.x, vy: vm.y, t: Date.now() });
+}
 function replaceMouse(ev) {
   if (!vm.active || !ev || ev.isNull()) return;
   try {
     const type = ev.readU32();
     if (type === 0x20d || type === 0x20f) {  // MOUSE_LEAVE / FOCUS_LOST while virtual mouse active
+      logEvent(type, 0, 0, 0, 0, 'drop-leave', ev.add(16).readU32());
       ev.writeU32(0x204);  // turn into a harmless WINDOW_EXPOSED
       return;
     }
-    if (type === 0x400 || type === 0x401 || type === 0x402) {
+    if (type === 0x401 || type === 0x402) {
+      // Button events: SDL may stamp the OS cursor position instead of the
+      // virtual one (observed for synthetic releases).  Our own sends are
+      // tagged by pendingBtn; rewrite those (and already-correct events) to
+      // the virtual cursor.  Foreign clicks are still dropped.
+      const ox = ev.add(28).readFloat();
+      const oy = ev.add(32).readFloat();
+      const downFlag = ev.add(25).readU8() !== 0;
+      const synth = pendingBtn.state !== 0 && (Date.now() - pendingBtn.t < 2000) &&
+                    ((downFlag && pendingBtn.state === 1) || (!downFlag && pendingBtn.state === 2));
+      if (synth) pendingBtn = { state: 0, t: 0 };
+      const atCursor = Math.abs(ox - vm.x) <= 1.0 && Math.abs(oy - vm.y) <= 1.0;
+      logEvent(type, ox, oy, downFlag ? 1 : 0, pendingBtn.state, synth ? 'rewrite-synth' : (atCursor ? 'rewrite' : 'drop-btn'),
+               ev.add(16).readU32());
+      if (!synth && !atCursor) {
+        ev.writeU32(0x204);  // foreign real click while the virtual mouse is active
+        return;
+      }
+      if (winID === 0) { const w = firstWindow(); if (w) winID = f.getWindowId(w); }
+      if (winID) ev.add(16).writeU32(winID);
+      ev.add(28).writeFloat(vm.x);
+      ev.add(32).writeFloat(vm.y);
+      return;
+    }
+    if (type === 0x400) {
       const ox = ev.add(28).readFloat();
       const oy = ev.add(32).readFloat();
       if (Math.abs(ox - vm.x) > 1.0 || Math.abs(oy - vm.y) > 1.0) {
+        logEvent(type, ox, oy, 0, 0, 'drop-pos', ev.add(16).readU32());
         ev.writeU32(0x204);  // drop real mouse events while virtual mouse is active
         return;
       }
@@ -204,10 +236,23 @@ function replaceMouse(ev) {
       if (winID) ev.add(16).writeU32(winID);
       ev.add(28).writeFloat(vm.x);
       ev.add(32).writeFloat(vm.y);
-      if (type === 0x400) ev.add(24).writeU32(vm.buttons >>> 0);
+      ev.add(24).writeU32(vm.buttons >>> 0);
     }
   } catch (e) {}
 }
+Interceptor.attach(p.push_event, {
+  onEnter(args) {
+    try {
+      const ev = args[0];
+      if (!ev || ev.isNull()) return;
+      const type = ev.readU32();
+      if (type === 0x400 || type === 0x401 || type === 0x402) {
+        logEvent(type, ev.add(28).readFloat(), ev.add(32).readFloat(),
+                 type === 0x400 ? 5 : ev.add(25).readU8(), 9, 'push', ev.add(16).readU32());
+      }
+    } catch (e) {}
+  }
+});
 Interceptor.attach(p.luaD_call, { onLeave(retval) { pump('luaD_call'); } });
 Interceptor.attach(p.poll_event, {
   onEnter(args) { this.ev = args[0]; },
@@ -273,9 +318,38 @@ rpc.exports = {
       if (bit) { if (down) vm.buttons |= bit; else vm.buttons &= ~bit; }
       f.setMouseFocus(w);
       syncSdlMouse();
+      pendingBtn = { state: down ? 1 : 2, t: Date.now() };
       f.privateMouseButton(uint64(0), w, mouseID, button, down ? 1 : 0, clicks === undefined ? 1 : clicks);
       syncSdlMouse();
       return { mouseID, buttons: vm.buttons, mouseFocus: f.getMouseFocus().toString() };
+    });
+  },
+  clickPair(button, holdMs) {
+    return run(() => {
+      let w = f.getFocus();
+      if (w.isNull()) w = firstWindow();
+      const mouseID = firstMouse();
+      if (!vm.active) {
+        vm.active = true; vm.buttons = 0; vm.x = 0; vm.y = 0;
+        try {
+          const wp = Memory.alloc(4), hp = Memory.alloc(4);
+          if (f.getWindowSize(w, wp, hp)) { vm.x = wp.readS32() / 2; vm.y = hp.readS32() / 2; }
+        } catch (e) {}
+      }
+      vm.win = w;
+      f.setMouseFocus(w);
+      const bit = button === 1 ? 1 : button === 2 ? 2 : button === 3 ? 4 : 0;
+      if (bit) vm.buttons |= bit;
+      syncSdlMouse();
+      pendingBtn = { state: 1, t: Date.now() };
+      f.privateMouseButton(uint64(0), w, mouseID, button, 1, 1);
+      if (holdMs > 0) { try { Thread.sleep(holdMs / 1000.0); } catch (e) {} }
+      if (bit) vm.buttons &= ~bit;
+      syncSdlMouse();
+      pendingBtn = { state: 2, t: Date.now() };
+      f.privateMouseButton(uint64(0), w, mouseID, button, 0, 1);
+      syncSdlMouse();
+      return { mouseID, buttons: vm.buttons, x: vm.x, y: vm.y };
     });
   },
   vmEnable(x, y) {
@@ -349,6 +423,11 @@ rpc.exports = {
       syncSdlMouse();
       return { a, b, winID, focus: f.getFocus().toString(), mouseFocus: f.getMouseFocus().toString() };
     });
+  },
+  eventLog() {
+    const out = evLog.slice(-60);
+    evLog = [];
+    return { n: out.length, events: out };
   },
   sdlMouseRaw() {
     return run(() => {
@@ -504,16 +583,21 @@ class ClientInput:
 
     def click(self, x: float, y: float, button: int = 1, hold_ms: int = 0,
               double: bool = False) -> dict:
+        """Atomic press+release at (x, y).
+
+        The game thread handles the pair in one job so SDL's button state
+        cannot be reset by a concurrent real-mouse event between the press and
+        the release (which otherwise silently swallows the release and breaks
+        GUI button activation).
+        """
         out = self.move(x, y)
-        out.update(self.button(button, True, 2 if double else 1))
-        if hold_ms > 0:
-            time.sleep(hold_ms / 1000.0)
-        out.update(self.button(button, False, 2 if double else 1))
+        time.sleep(0.12)
+        if hold_ms > 120:
+            hold_ms = 120
+        out.update(self.script.exports_sync.click_pair(int(button), int(hold_ms)))
         if double:
             time.sleep(0.06)
-            self.button(button, True, 2)
-            time.sleep(0.04)
-            self.button(button, False, 2)
+            self.script.exports_sync.click_pair(int(button), 40)
         return out
 
     def key(self, scancode: int, down: bool) -> dict:
@@ -526,6 +610,16 @@ class ClientInput:
 
     def text(self, text: str) -> dict:
         return self.script.exports_sync.text(str(text))
+
+    def click_pair(self, button: int = 1, hold_ms: int = 0) -> dict:
+        """Atomic down+up at the current virtual position.
+
+        Both events are generated inside one game-thread job, so a concurrent
+        real-mouse event cannot clear SDL's button state in between.  Use this
+        to clear a held button (e.g. stop a background mining hold) or for any
+        click that must reliably produce a release event.
+        """
+        return self.script.exports_sync.click_pair(int(button), int(hold_ms))
 
     def release_all(self) -> dict:
         return self.script.exports_sync.release_all()

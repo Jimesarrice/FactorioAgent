@@ -123,7 +123,29 @@ TOOLS = [
          "direction": {"type": "integer"}}, "required": ["item", "x", "y"]}},
     {"name": "client_action_open", "description": "Left-click an entity to open its GUI in the background (empty the cursor first). Verification of the opened GUI requires a screenshot; use client_action_close_ui after.",
      "inputSchema": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}}, "required": ["x", "y"]}},
-    {"name": "client_action_walk_to", "description": "Walk toward a world position with feedback and simple detours. Background; tolerance defaults to 0.8 tiles.",
+    {"name": "client_action_mine_entity", "description": "Mine the nearest tree/rock/simple entity by type or name in the background: tile-BFS walking to it, right-hold, stop on a blank tile. Use item='wood' to verify tree chopping.",
+     "inputSchema": {"type": "object", "properties": {
+         "name": {"type": "string"}, "type": {"type": "string"},
+         "item": {"type": "string"}, "radius": {"type": "number", "default": 64},
+         "timeout": {"type": "number", "default": 120}}, "required": []}},
+    {"name": "client_action_craft", "description": "Hand-craft a recipe through the character-screen crafting GUI: Ctrl+F search, type the query, click the first result. Normal UI input; works in the background.",
+     "inputSchema": {"type": "object", "properties": {
+         "query": {"type": "string"}, "count": {"type": "integer", "default": 1},
+         "timeout": {"type": "number", "default": 20}}, "required": ["query"]}},
+    {"name": "client_action_insert", "description": "Open an entity and move one player stack of an item into one of its slots (input/fuel/slot1) with background GUI clicks. Built-in layouts: stone furnace, burner mining drill, wooden chest (3440x1440 UI 1.25).",
+     "inputSchema": {"type": "object", "properties": {
+         "x": {"type": "number"}, "y": {"type": "number"},
+         "entity": {"type": "string"}, "item": {"type": "string"},
+         "slot": {"type": "string", "default": "input"}}, "required": ["x", "y", "entity", "item"]}},
+    {"name": "client_action_take", "description": "Open an entity and Ctrl+click a slot to fast-transfer its contents into the player inventory (works for furnace output/fuel and chest slots).",
+     "inputSchema": {"type": "object", "properties": {
+         "x": {"type": "number"}, "y": {"type": "number"},
+         "entity": {"type": "string"}, "slot": {"type": "string", "default": "output"}},
+         "required": ["x", "y", "entity"]}},
+    {"name": "client_action_pick_ground", "description": "Pick up item-on-ground at a world position with F (e.g. burner mining drill output, which drops at drop_position).",
+     "inputSchema": {"type": "object", "properties": {
+         "x": {"type": "number"}, "y": {"type": "number"}}, "required": ["x", "y"]}},
+    {"name": "client_action_walk_to", "description": "Walk to a world position with a tile-collision BFS (client Lua collision grid) and automatic replanning. Background; tolerance defaults to 0.8 tiles.",
      "inputSchema": {"type": "object", "properties": {
          "x": {"type": "number"}, "y": {"type": "number"},
          "tolerance": {"type": "number", "default": 0.8},
@@ -325,6 +347,38 @@ class ClientMcpServer:
                 raise RuntimeError("high-level action agent is not attached")
             return json.dumps(self.actions.open_entity(float(args["x"]), float(args["y"])),
                               ensure_ascii=False), True, None
+        if name == "client_action_mine_entity":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            out = self.actions.mine_entity(
+                args.get("name"), args.get("type"), args.get("item"),
+                float(args.get("radius", 64)), float(args.get("timeout", 120)))
+            return json.dumps(out, ensure_ascii=False), True, None
+        if name == "client_action_craft":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            out = self.actions.craft(args["query"], int(args.get("count", 1)),
+                                     float(args.get("timeout", 20)))
+            return json.dumps(out, ensure_ascii=False), True, None
+        if name == "client_action_insert":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            out = self.actions.entity_insert(
+                float(args["x"]), float(args["y"]), args["entity"], args["item"],
+                args.get("slot", "input"))
+            return json.dumps(out, ensure_ascii=False), True, None
+        if name == "client_action_take":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            out = self.actions.entity_take(
+                float(args["x"]), float(args["y"]), args["entity"],
+                args.get("slot", "output"))
+            return json.dumps(out, ensure_ascii=False), True, None
+        if name == "client_action_pick_ground":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            out = self.actions.pick_ground(float(args["x"]), float(args["y"]))
+            return json.dumps(out, ensure_ascii=False), True, None
         if name == "client_action_walk_to":
             if not self.actions:
                 raise RuntimeError("high-level action agent is not attached")
@@ -339,7 +393,7 @@ class ClientMcpServer:
         if name == "client_action_close_ui":
             if not self.actions:
                 raise RuntimeError("high-level action agent is not attached")
-            return json.dumps(self.actions.close_ui(), ensure_ascii=False), True, None
+            return json.dumps(self.actions.close_all_ui(), ensure_ascii=False), True, None
         if name == "client_action_status":
             if not self.actions:
                 raise RuntimeError("high-level action agent is not attached")
@@ -386,7 +440,7 @@ class ClientMcpServer:
             return {"jsonrpc": "2.0", "id": mid, "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "factorio-client-control", "version": "0.3.6"},
+                "serverInfo": {"name": "factorio-client-control", "version": "0.3.7"},
                 "instructions": (
                     "Client-side input control for a running Factorio window. "
                     "Call client_list_windows/client_attach, client_focus, then use "

@@ -27,6 +27,8 @@ EXPECTED = {
     "client_action_pick", "client_action_build", "client_action_open",
     "client_action_walk_to", "client_action_stop", "client_action_close_ui",
     "client_action_status", "client_action_detach",
+    "client_action_mine_entity", "client_action_craft", "client_action_insert",
+    "client_action_take", "client_action_pick_ground",
 }
 
 

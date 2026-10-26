@@ -1,4 +1,4 @@
-# FactorioAgent 0.3.6（分发版）
+# FactorioAgent 0.3.7（分发版）
 
 让大模型在真实 Factorio 服务器里扮演一名**真实玩家**。不需要重写游戏，不需要给客户端装 mod；服务端用 scenario + RCON，第二个真实客户端作为 Bot 的身体。
 
@@ -36,6 +36,13 @@ python -m bridge.webui
 python tests\mcp_smoke.py
 python -m bridge.cli observe --rcon-port 27017 --rcon-password "你的密码"
 ```
+
+## 0.3.7 更新
+
+- 修复后台 GUI 点击根因（原子 down+up），角色界面/合成/背包点击全部可用。
+- 新增后台合成、伐木/挖石、实体进货/出货（Ctrl+左键快速转移）、地面拾取。
+- 瓦片碰撞网格 BFS 寻路。
+- 客户端 MCP 44 个工具；实测客户端侧闭环（木→木箱→石炉→铁板→齿轮→矿钻→木箱收集）。
 
 ## 0.3.6 更新
 
