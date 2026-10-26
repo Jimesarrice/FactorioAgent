@@ -179,6 +179,7 @@ python -m bridge.client_mcp_server
 它提供 44 个 `client_*` 工具（0.3.7 新增 5 个：craft/mine_entity/insert/take/pick_ground）：
 
 - 输入：窗口列表/绑定/聚焦、截图（可内联返回图片）、按键、长按、走路、鼠标点击/长按、滚轮、文本、地图和背包开关；需要前台窗口。
+- 高层后台动作：`client_action_attach/state/mine/mine_entity/pick/build/craft/insert/take/pick_ground/open/walk_to/stop/close_ui/status/detach`；使用正常客户端输入 + 只读 Lua 状态，不需要窗口焦点。
 - 后台读取：`client_memory_attach/status/observe/inventory/detach`，通过 Frida 只读 Lua 桥读取位置、血量、背包、附近资源/实体和研究，不需要窗口焦点。
 
 输入工具不修改内存/游戏状态；内存工具只读，但需要安装 `frida`。

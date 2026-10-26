@@ -8,6 +8,9 @@ normal-player actions without window focus:
 * mine the nearest resource (right mouse held; move the cursor off all
   entities to stop, the reliable background stop on this build);
 * pick an item from the character inventory through the GUI;
+* hand-craft through the character-screen crafting search;
+* insert a stack into an entity slot and fast-transfer entity contents out
+  (Ctrl+click), or pick up ground items with F;
 * build an item on the ground (left click);
 * open an entity GUI and close it.
 
@@ -764,6 +767,12 @@ return helpers.table_to_json({
         geo = self.ENTITY_GUI.get(entity_name)
         if not geo:
             raise RuntimeError(f"no GUI layout known for {entity_name}")
+        if slot not in geo:
+            raise RuntimeError(
+                f"{entity_name} has no {slot!r} slot in the known layout "
+                f"(available: {sorted(k for k in geo if k != 'char')}); "
+                "burner drills drop their output on the ground - use a chest "
+                "at the drop position or pick_ground()")
         before = {i["name"]: int(i["count"]) for i in self.state().get("inventory", [])}
         self.open_entity(x, y)
         self.mod_click(geo[slot][0], geo[slot][1], "ctrl")
