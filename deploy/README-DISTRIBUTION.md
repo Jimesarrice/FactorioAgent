@@ -1,4 +1,4 @@
-# FactorioAgent 0.3.5（分发版）
+# FactorioAgent 0.3.6（分发版）
 
 让大模型在真实 Factorio 服务器里扮演一名**真实玩家**。不需要重写游戏，不需要给客户端装 mod；服务端用 scenario + RCON，第二个真实客户端作为 Bot 的身体。
 
@@ -37,7 +37,7 @@ python tests\mcp_smoke.py
 python -m bridge.cli observe --rcon-port 27017 --rcon-password "你的密码"
 ```
 
-## 0.3.5 更新
+## 0.3.6 更新
 
 - 新增客户端只读内存/Lua 桥（Frida）：后台读取位置、血量、背包、附近资源/实体/研究，不需要窗口焦点；MCP 提供 `client_memory_*`。
 

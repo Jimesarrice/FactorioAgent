@@ -265,7 +265,7 @@ class McpServer:
             return {"jsonrpc": "2.0", "id": msg_id, "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "factorio-agentbridge", "version": "0.3.5"},
+                "serverInfo": {"name": "factorio-agentbridge", "version": "0.3.6"},
                 "instructions": (
                     "You are connected to a real Factorio 2.1 server through an embodied "
                     "agent. Call decision_context first, then use one blocking tool at a "

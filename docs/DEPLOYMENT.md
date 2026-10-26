@@ -1,17 +1,27 @@
 # 部署与运维手册（分发版）
 
-版本：0.3.5（后台 SDL 动作通道 + 客户端输入/内存读取 + 同机 Steam 共存 + MCP 实测修复）  
+版本：0.3.6（客户端高层后台动作 + SDL 输入 + 内存读取 + 同机 Steam 共存 + MCP 实测修复）  
 适用：Windows 10/11（真实玩家模式）；Linux 可运行 headless 服务端，但第二真实客户端未做完整验证。  
 游戏：Factorio **2.1.x**，需要 **Space Age** DLC（真实玩家/太空平台功能依赖它）。
 
 ---
+
+## 0. 0.3.6 更新摘要
+
+0.3.6 新增客户端**高层后台动作**（无需窗口焦点/服务端 scenario/RCON）：
+
+- `bridge/client_actions.py`：自动退出 remote view（controller=1）；右键长按挖矿，光标移空白地停止；GUI 取背包物品；左键放置建筑；左键打开实体 GUI；简单反馈式行走。
+- `client_mcp_server` 新增 11 个 `client_action_*` 工具，共 **39 个** `client_*` 工具。
+- 实测：后台挖铁矿产矿并同步服务器；后台取石炉并放置；打开石炉 GUI；行走/选择/GUI 点击正常。
+- 已知限制：后台右键 up 不清除客户端输入状态，用空白地停止；矿钻先放后挖；打开 GUI 的验证需截图；背包槽位几何默认 3440×1440。
+- 0.3.5 的后台只读内存、0.3.3 的前台输入、0.3.2 的共存均保留。
 
 ## 0. 0.3.5 更新摘要
 
 0.3.5 新增客户端**后台动作通道**（不依赖服务端 scenario/RCON，不需要窗口前台）：
 
 - `bridge/client_input.py`：Frida SDL 注入。键盘按键/长按/文本通过 SDL keyboard state 发送；虚拟鼠标通过重写 SDL 事件和 SDL mouse state 保持位置，屏蔽真实鼠标干扰。
-- `client_mcp_server` 新增 10 个 `client_input_*` 工具，共 **28 个** `client_*` 工具。
+- `client_mcp_server` 新增 10 个 `client_input_*` 工具，共 **28 个** `client_*` 工具（0.3.6 进一步到 39 个）。
 - 已实测：后台 **W/A/S/D 行走**同步到真实服务器；后台虚拟鼠标可定位、悬停/选中实体、点击 GUI（如打开人物界面）；客户端可保持后台/最小化。
 - 仍是正常玩家输入，不写角色/背包/位置，不伪造网络包。
 - 已知限制：世界目标的长按鼠标动作（手挖、放置建筑）当前客户端动作层未接受；自有服务器请用 scenario 工具，或临时把窗口切前台用旧 `client_*` 工具。
@@ -31,7 +41,8 @@
 
 
 - `bridge/client_control.py`：Win32 窗口/键鼠/截图控制。
-- `bridge/client_mcp_server.py`：独立 MCP server，28 个 `client_*` 工具，截图可内联返回图片。
+- `bridge/client_mcp_server.py`：独立 MCP server，39 个 `client_*` 工具（0.3.6 含高层动作），截图可内联返回图片。
+- `bridge/client_actions.py`：0.3.6 高层后台动作（挖矿/取物/放置/打开/行走）。
 - `bridge/client_input.py`：0.3.5 后台 SDL 动作通道（键盘/虚拟鼠标），不要求窗口前台。
 - 适用于原版 freeplay Host（例如 204）；输入类工具需要前台，`client_memory_*` 通过 Frida 只读 Lua 桥在后台读取位置/背包/附近资源。
 - 文档：[CLIENT-INJECTION.md](CLIENT-INJECTION.md)。
@@ -84,7 +95,7 @@ FactorioAgent 让大模型在**真实运行的 Factorio 服务器**里扮演一�
 ## 2. 分发包内容
 
 ```
-FactorioAgent-0.3.5/
+FactorioAgent-0.3.6/
 ├─ README.md                    项目说明
 ├─ VERSION                     版本号
 ├─ LICENSE                     MIT
@@ -663,7 +674,7 @@ python -m bridge.cli stop --rcon-port 27017 --rcon-password "你的密码"
 - `dismantle_entity`/`rotate_entity` 需在 10 格内；远距离会返回明确错误而不是自动寻路。
 - `cancel_job`/`cancel_all` 现在会写 `job_canceled` 事件（含 `reason`），便于审计。
 - 载具/火车/蜘蛛机甲、GUI-only 操作、复杂蓝图模块/燃料/线缆参数尚未封装成高层工具；可用 `lua_eval` 补，但默认关闭。
-- 客户端后台动作通道的**世界目标长按鼠标动作**（手挖/放置建筑）尚未打通：可选中/悬停/GUI 点击，但客户端动作层当前不把合成按钮事件当作世界按住状态；键盘行走、GUI 操作、读状态均可用。
+- 0.3.6 客户端高层动作已打通右键挖矿/左键放置；后台右键 up 不清除客户端输入状态，必须用“光标移空白地”停止，矿钻要在长按采矿前放置；打开 GUI 的验证用截图。
 - 完整 Space Age 通关（到 Shattered Planet）是模型规划/长时记忆/错误恢复问题，连接器提供能力面，不保证任意模型能通关。
 - 本机同 GPU 同时跑正常客户端 + Bot 客户端会有性能开销；建议低画质/最小化。
 - Linux 下 headless 服务端可用；第二真实客户端的窗口/最小化逻辑主要按 Windows 编写，未完整验证。
@@ -674,21 +685,21 @@ python -m bridge.cli stop --rcon-port 27017 --rcon-password "你的密码"
 
 每个发布 zip 旁会提供：
 
-- `FactorioAgent-0.3.5.zip`
-- `FactorioAgent-0.3.5.zip.sha256`
+- `FactorioAgent-0.3.6.zip`
+- `FactorioAgent-0.3.6.zip.sha256`
 - `MANIFEST.txt`（包内）
 
 Windows 校验：
 
 ```powershell
-Get-FileHash .\FactorioAgent-0.3.5.zip -Algorithm SHA256
-Get-Content .\FactorioAgent-0.3.5.zip.sha256
+Get-FileHash .\FactorioAgent-0.3.6.zip -Algorithm SHA256
+Get-Content .\FactorioAgent-0.3.6.zip.sha256
 ```
 
 Linux/macOS：
 
 ```bash
-sha256sum FactorioAgent-0.3.5.zip
+sha256sum FactorioAgent-0.3.6.zip
 ```
 
 ---

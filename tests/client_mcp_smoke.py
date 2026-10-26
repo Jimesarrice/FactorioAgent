@@ -23,6 +23,10 @@ EXPECTED = {
     "client_input_walk", "client_input_text", "client_input_move",
     "client_input_click", "client_input_world_click", "client_input_mouse_off",
     "client_input_detach",
+    "client_action_attach", "client_action_state", "client_action_mine",
+    "client_action_pick", "client_action_build", "client_action_open",
+    "client_action_walk_to", "client_action_stop", "client_action_close_ui",
+    "client_action_status", "client_action_detach",
 }
 
 
@@ -31,6 +35,7 @@ def main() -> int:
     ap.add_argument("--live", action="store_true")
     ap.add_argument("--memory", action="store_true", help="also attach/read the Frida memory bridge")
     ap.add_argument("--background", action="store_true", help="also attach the background SDL input channel")
+    ap.add_argument("--actions", action="store_true", help="also attach the high-level background action agent")
     ap.add_argument("--player-name", help="bot player name when the server has multiple players")
     args = ap.parse_args()
     proc = subprocess.Popen(
@@ -98,6 +103,20 @@ def main() -> int:
                     ("client_input_move", {"x": 1720, "y": 720}),
                     ("client_input_mouse_off", {}),
                     ("client_input_detach", {}),
+                ):
+                    is_error, text = tool(name, payload)
+                    if is_error:
+                        print(f"FAIL {name}: {text[:400]}")
+                        return 1
+                    print(f"PASS {name}: {text[:160]}")
+            if args.actions:
+                window = json.loads(tool("client_list_windows", {})[1])[0]
+                for name, payload in (
+                    ("client_action_attach", {"pid": window["pid"], "name": args.player_name}),
+                    ("client_action_state", {}),
+                    ("client_action_status", {}),
+                    ("client_action_stop", {}),
+                    ("client_action_detach", {}),
                 ):
                     is_error, text = tool(name, payload)
                     if is_error:

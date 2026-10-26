@@ -21,7 +21,8 @@
 | 组件 | 作用 |
 |---|---|
 | `bridge/client_control.py` | 查找/聚焦 Factorio 窗口，发送 WASD、鼠标点击/长按、滚轮、文本，截图 |
-| `bridge/client_mcp_server.py` | 独立 MCP stdio server，暴露 28 个 `client_*` 工具（含后台输入与内存读取） |
+| `bridge/client_mcp_server.py` | 独立 MCP stdio server，暴露 39 个 `client_*` 工具（含高层动作、后台输入与内存读取） |
+| `bridge/client_actions.py` | 0.3.6 高层后台动作：行走/挖矿/取物/放置/打开 GUI |
 | `bridge/client_input.py` | 0.3.5 后台 SDL 动作通道：键盘/文本/虚拟鼠标，不要求前台 |
 | `bridge/client_memory.py` | Frida 只读 Lua 桥：抓取 lua_State、在游戏线程读取玩家/背包/附近环境 |
 | `docs/client-mcp-config.example.json` | MCP 客户端配置示例 |
@@ -48,7 +49,28 @@
 
 实现：hook `SDL_PollEvent`，在游戏线程上通过 `SDL_SendKeyboardKeyInternal` 注入按键，通过 `SDL_SendMouseMotion`/`SDL_PrivateSendMouseButton` 注入鼠标，并重写/屏蔽真实鼠标事件。**不修改角色/背包/位置，不发送伪造网络包**；服务端收到的是正常 InputAction。
 
-已知限制：世界目标的长按鼠标动作（手挖、放置建筑）当前没有被客户端动作层接受——选中/悬停正常，但按住状态不触发。自有服务器请用 AgentBridge 的 `mine_entity`/建造/蓝图工具；原版服务器可临时把窗口切前台，用旧 `client_click(hold_ms=...)` 备用，或在会话中继续研究客户端动作层。
+> 0.3.6 更正：世界长按动作**已经打通**。之前的失败是因为客户端处于 remote view（controller=7）、使用了左键/中键或没有把光标移出矿脉；正确路径是：先在角色控制器（controller=1），用**右键**按住矿产资源，停止时把光标移到空白地（后台右键 up 不会清除客户端输入状态）。矿钻要在开始长按采矿之前放置。详见 1.6 节。
+
+## 1.6 高层后台动作（0.3.6，`client_action_*`）
+
+`client_action_attach` 创建一个 `ClientActions`，内部同时保持 SDL 输入和只读 Lua 状态；它会自动退出 remote view（controller != 1 时按 M）。工具：
+
+- `client_action_state`：controller、位置、选中实体、mining、cursor、背包、opened_self、虚拟鼠标；
+- `client_action_mine`：后台挖最近的资源（默认 iron-ore），右键长按，移动到空白地停止，校验背包增量；
+- `client_action_pick`：在人物背包 GUI 中点击物品到 cursor；
+- `client_action_build`：取物并在世界坐标放置（可指定 on_ore/direction）；
+- `client_action_open`：左键打开实体 GUI（先清空 cursor）；
+- `client_action_walk_to`、`client_action_stop`、`client_action_close_ui`、`client_action_status`、`client_action_detach`。
+
+已实测（F: 本地服务端 + 真实客户端，无窗口焦点）：右键长按铁矿产矿并同步服务器背包；GUI 取石炉；左键放置石炉；打开石炉 GUI；自动退出 remote view。所有动作都是正常客户端输入，不写 Lua/实体/网络包。
+
+限制与操作顺序：
+
+- 后台右键 up 不会让客户端生成 StopMining；用 `aim_blank`（光标移到无实体地块）停止，服务器 mining 会变 false。停止后客户端仍可能保持“右键按住”状态；此时**不要**把光标移到矿/建筑上做放置，先做地面放置或直接开始下一次采矿。
+- 矿钻必须**先**放到矿上（右键未按住时），再开始长按采矿；`client_action_build(on_ore=true)` 在检测到 mining 时会拒绝。
+- `opened` 实体 GUI 的验证不在安全 Lua 状态里（部分客户端会抛硬错误）；用截图或后续工具确认。
+- 背包槽位几何默认 `(1228,524)`、44px、10 列（3440×1440，UI 1.25）；其他分辨率在构造 `ClientActions` 时覆盖。
+- 仍建议在自己的服务器上优先用 scenario 的 `mine_entity`/建造/蓝图工具；客户端高层动作用于没有 scenario/RCON 的原版 Host。
 
 ## 2. 后台内存/Lua 读取（Frida）
 

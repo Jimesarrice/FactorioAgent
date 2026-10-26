@@ -166,7 +166,7 @@ python tests/mcp_smoke.py          # initialize + tools/list，53 个工具
 python tests/mcp_smoke.py --live   # 连接运行中的游戏，调用只读工具
 ```
 
-2026-10-25 全流程实测报告见 [runs/MCP-FULLFLOW-TEST-2026-10-25.md](runs/MCP-FULLFLOW-TEST-2026-10-25.md)。MCP 0.3.5（后台动作通道 + 全流程修复 + 同机共存 + 客户端输入 + 后台内存读取），53 tools；客户端 MCP 28 tools；`initialize`、`tools/list`、`get_state`、`decision_context`、`ping`、`observe`、`scan`、`nearby_entities`、`find_water`、`recipe_info`、`recipes_query`、`technologies`、`tech_tree`、`entity_detail`、`production_stats`、`alerts`、`resource_patches`、`wire_poles`、`get_inbox`、`instruct`、`get_events`、`get_blueprints`、`get_platforms`、`pause`/`resume`、`set_speed`、`set_eval(false)`、`submit_job`+`wait` 均返回成功；`tools/call` 错误以 `isError:true` 返回，不中断会话。
+2026-10-25 全流程实测报告见 [runs/MCP-FULLFLOW-TEST-2026-10-25.md](runs/MCP-FULLFLOW-TEST-2026-10-25.md)。MCP 0.3.6（客户端高层后台动作 + 全流程修复 + 同机共存 + 后台输入/内存），53 tools；客户端 MCP 39 tools；`initialize`、`tools/list`、`get_state`、`decision_context`、`ping`、`observe`、`scan`、`nearby_entities`、`find_water`、`recipe_info`、`recipes_query`、`technologies`、`tech_tree`、`entity_detail`、`production_stats`、`alerts`、`resource_patches`、`wire_poles`、`get_inbox`、`instruct`、`get_events`、`get_blueprints`、`get_platforms`、`pause`/`resume`、`set_speed`、`set_eval(false)`、`submit_job`+`wait` 均返回成功；`tools/call` 错误以 `isError:true` 返回，不中断会话。
 
 ## 6.5 客户端输入 MCP（无 RCON/无服务端 mod）
 
@@ -176,7 +176,7 @@ python tests/mcp_smoke.py --live   # 连接运行中的游戏，调用只读工�
 python -m bridge.client_mcp_server
 ```
 
-它提供 28 个 `client_*` 工具（其中 10 个是 0.3.5 后台 `client_input_*`）：
+它提供 39 个 `client_*` 工具（0.3.6 新增 11 个 `client_action_*` 高层动作）：
 
 - 输入：窗口列表/绑定/聚焦、截图（可内联返回图片）、按键、长按、走路、鼠标点击/长按、滚轮、文本、地图和背包开关；需要前台窗口。
 - 后台读取：`client_memory_attach/status/observe/inventory/detach`，通过 Frida 只读 Lua 桥读取位置、血量、背包、附近资源/实体和研究，不需要窗口焦点。

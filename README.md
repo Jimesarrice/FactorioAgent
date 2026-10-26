@@ -1,4 +1,4 @@
-# FactorioAgent 0.3.5（分发版）
+# FactorioAgent 0.3.6（分发版）
 
 让大模型在真实 Factorio 服务器里扮演一名**真实玩家**。不需要重写游戏，不需要给客户端装 mod；服务端用 scenario + RCON，第二个真实客户端作为 Bot 的身体。
 
@@ -37,11 +37,19 @@ python tests\mcp_smoke.py
 python -m bridge.cli observe --rcon-port 27017 --rcon-password "你的密码"
 ```
 
+## 0.3.6 更新
+
+- 新增高层后台动作模块 `bridge/client_actions.py`：**行走、挖矿、从背包取物、放置建筑、打开实体 GUI**，全部无需窗口前台/焦点，不依赖服务端 scenario/RCON。
+- 客户端 MCP 扩展为 **39 个 `client_*` 工具**；新增 `client_action_*`（state/mine/pick/build/open/walk_to/stop/close_ui）。
+- 实测：右键长按采矿同步到真实服务器（背包 +矿）；后台 GUI 取物；左键放置石炉成功；自动退出 remote view（按 M）。
+- 已知限制：后台右键 up 未清除客户端输入状态；用“光标移到空白地”停止采矿；矿钻要在开始长按采矿**之前**放到矿上；打开 GUI 的验证需要截图。背包槽位坐标默认按 3440×1440 客户端，见 `docs/CLIENT-INJECTION.md`。
+- 0.3.5 的“世界长按动作未打通”已被本版取代。
+
 ## 0.3.5 更新
 
 - 新增客户端只读内存/Lua 桥（Frida）：后台读取位置、血量、背包、附近资源/实体/研究，不需要窗口焦点；MCP 提供 `client_memory_*`。
 - 客户端 MCP 扩展为 **28 个 `client_*` 工具**：新增 0.3.5 **后台 SDL 动作通道**（`client_input_*`）。后台键盘（行走/按键/文本）和虚拟鼠标（定位、悬停/选择、GUI 点击）不需要窗口前台/焦点，也不依赖服务端 scenario/RCON；已验证后台行走会同步到真实服务器。
-- 已知限制：世界目标的长按鼠标动作（手挖、放置建筑）尚未被客户端动作层接受；自有服务器请用 scenario 工具，或临时前台使用旧 `client_*` 工具。详见 `docs/CLIENT-INJECTION.md`。
+- 0.3.5 当时的已知限制（世界长按动作）已在 0.3.6 通过右键长按 + 空白地停止 + 高层动作工具解决；详见 `docs/CLIENT-INJECTION.md`。
 
 ## 0.3.3 更新
 

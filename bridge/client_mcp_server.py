@@ -86,7 +86,7 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}},
     {"name": "client_input_move", "description": "Move the virtual mouse to SDL client coordinates (the game's display resolution, e.g. 3440x1440). Background; no focus needed. Real mouse events are hidden while active.",
      "inputSchema": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}}, "required": ["x", "y"]}},
-    {"name": "client_input_click", "description": "Click at SDL client coordinates in the background. GUI clicks and hover/selection work; held world mining/placing is not yet accepted by the client action layer.",
+    {"name": "client_input_click", "description": "Low-level click at SDL client coordinates. GUI clicks and hover/selection work; for world actions prefer client_action_mine/client_action_build.",
      "inputSchema": {"type": "object", "properties": {
          "x": {"type": "number"}, "y": {"type": "number"},
          "button": {"type": "string", "enum": ["left", "right", "middle"], "default": "left"},
@@ -102,6 +102,39 @@ TOOLS = [
     {"name": "client_input_mouse_off", "description": "Disable the virtual mouse and stop hiding real mouse events.",
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "client_input_detach", "description": "Detach the background input channel.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "client_action_attach", "description": "Attach the high-level background action agent (walk/mine/pick/build/open) to a running client. It automatically leaves remote view (presses M when needed) and uses the persistent SDL input + read-only Lua state.",
+     "inputSchema": {"type": "object", "properties": {
+         "pid": {"type": "integer"}, "name": {"type": "string", "description": "bot player name"}}}},
+    {"name": "client_action_state", "description": "High-level state: controller, position, selected entity, mining, cursor item, inventory, opened-self, virtual mouse. Works in the background.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "client_action_mine", "description": "Mine the nearest resource of a type in the background: aim with the virtual mouse, hold the right button, stop by moving the cursor to a blank tile, verify inventory. Requires the character controller (auto).",
+     "inputSchema": {"type": "object", "properties": {
+         "resource": {"type": "string", "default": "iron-ore"},
+         "count": {"type": "integer", "default": 1},
+         "radius": {"type": "number", "default": 16},
+         "timeout": {"type": "number", "default": 25}}, "required": []}},
+    {"name": "client_action_pick", "description": "Pick an item from the character's main inventory into the cursor via background GUI clicks. Inventory slot geometry defaults to a 3440x1440 client.",
+     "inputSchema": {"type": "object", "properties": {"item": {"type": "string"}}, "required": ["item"]}},
+    {"name": "client_action_build", "description": "Build/pick an item and place it at a world position in the background. on_ore=true for a mining drill; build drills before starting a mining hold, because the client keeps the right button held after background mining.",
+     "inputSchema": {"type": "object", "properties": {
+         "item": {"type": "string"}, "x": {"type": "number"}, "y": {"type": "number"},
+         "on_ore": {"type": "boolean", "default": False},
+         "direction": {"type": "integer"}}, "required": ["item", "x", "y"]}},
+    {"name": "client_action_open", "description": "Left-click an entity to open its GUI in the background (empty the cursor first). Verification of the opened GUI requires a screenshot; use client_action_close_ui after.",
+     "inputSchema": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}}, "required": ["x", "y"]}},
+    {"name": "client_action_walk_to", "description": "Walk toward a world position with feedback and simple detours. Background; tolerance defaults to 0.8 tiles.",
+     "inputSchema": {"type": "object", "properties": {
+         "x": {"type": "number"}, "y": {"type": "number"},
+         "tolerance": {"type": "number", "default": 0.8},
+         "timeout": {"type": "number", "default": 30}}, "required": ["x", "y"]}},
+    {"name": "client_action_stop", "description": "Stop mining and release all virtual mouse buttons; moves the cursor to a blank tile first.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "client_action_close_ui", "description": "Close the character/inventory GUI (E) or an entity GUI (Escape) when open.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "client_action_status", "description": "Controller and state of the high-level background action agent.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "client_action_detach", "description": "Detach the high-level background action agent.",
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "client_memory_attach", "description": "Attach a read-only Frida Lua bridge to the client process. Works while the game is background/minimized; does not require window focus. Requires frida on the host.",
      "inputSchema": {"type": "object", "properties": {
@@ -127,6 +160,7 @@ class ClientMcpServer:
         self.mem = None
         self.memory_name = None
         self.input = None
+        self.actions = None
 
     def _client(self) -> ClientController:
         if self.ctrl is None:
@@ -256,6 +290,66 @@ class ClientMcpServer:
                 self.input.close()
                 self.input = None
             return json.dumps({"ok": True}, ensure_ascii=False), True, None
+        if name == "client_action_attach":
+            from .client_actions import ClientActions
+            apid = args.get("pid") or c.pid
+            if self.actions:
+                self.actions.close()
+            self.actions = ClientActions(int(apid), args.get("name"))
+            return json.dumps({"state": self.actions.state()}, ensure_ascii=False), True, None
+        if name == "client_action_state":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            return json.dumps(self.actions.state(), ensure_ascii=False), True, None
+        if name == "client_action_mine":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            out = self.actions.mine_nearest(
+                args.get("resource", "iron-ore"), int(args.get("count", 1)),
+                float(args.get("radius", 16)), float(args.get("timeout", 25)))
+            return json.dumps(out, ensure_ascii=False), True, None
+        if name == "client_action_pick":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            return json.dumps(self.actions.pick_item(args["item"]), ensure_ascii=False), True, None
+        if name == "client_action_build":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            out = self.actions.build_item(
+                args["item"], float(args["x"]), float(args["y"]),
+                bool(args.get("on_ore", False)),
+                int(args["direction"]) if args.get("direction") is not None else None)
+            return json.dumps(out, ensure_ascii=False), True, None
+        if name == "client_action_open":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            return json.dumps(self.actions.open_entity(float(args["x"]), float(args["y"])),
+                              ensure_ascii=False), True, None
+        if name == "client_action_walk_to":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            return json.dumps(self.actions.walk_to(
+                float(args["x"]), float(args["y"]),
+                float(args.get("tolerance", 0.8)), float(args.get("timeout", 30))),
+                ensure_ascii=False), True, None
+        if name == "client_action_stop":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            return json.dumps(self.actions.stop_mining(), ensure_ascii=False), True, None
+        if name == "client_action_close_ui":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            return json.dumps(self.actions.close_ui(), ensure_ascii=False), True, None
+        if name == "client_action_status":
+            if not self.actions:
+                raise RuntimeError("high-level action agent is not attached")
+            return json.dumps({"controller": self.actions.controller_type(),
+                               "state": self.actions.state()}, ensure_ascii=False), True, None
+        if name == "client_action_detach":
+            if self.actions:
+                self.actions.close()
+                self.actions = None
+            return json.dumps({"ok": True}, ensure_ascii=False), True, None
         if name == "client_memory_attach":
             from .client_memory import ClientMemory
             mpid = args.get("pid") or c.pid
@@ -292,17 +386,17 @@ class ClientMcpServer:
             return {"jsonrpc": "2.0", "id": mid, "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "factorio-client-control", "version": "0.3.5"},
+                "serverInfo": {"name": "factorio-client-control", "version": "0.3.6"},
                 "instructions": (
                     "Client-side input control for a running Factorio window. "
                     "Call client_list_windows/client_attach, client_focus, then use "
                     "client_screenshot + client_key/client_walk/client_click. "
-                    "client_memory_* attaches a read-only Frida Lua bridge for background "
-                    "position/inventory/nearby data without window focus. client_input_* attaches "
-                    "a persistent background SDL input channel: walking, key presses and GUI mouse "
-                    "clicks work while the game is unfocused/minimized. World held-button mining or "
-                    "building is not accepted by the client action layer yet; use the server-side "
-                    "scenario tools for that on your own server."),
+                    "client_action_* attaches a high-level background action agent: walk, mine, "
+                    "pick items from inventory, build on the ground, and open entity GUIs without "
+                    "window focus. It auto-leaves remote view (M). Mining holds the right mouse and "
+                    "stops by moving the cursor to a blank tile; build drills on ore before a mining "
+                    "hold. Ordinary server-side scenario tools remain the most robust route when the "
+                    "server is yours."),
             }}
         if method in ("notifications/initialized", "initialized", "ping"):
             return None if method != "ping" else {"jsonrpc": "2.0", "id": mid, "result": {}}

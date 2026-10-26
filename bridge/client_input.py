@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""Probe SDL event injection in a running Factorio client (background input).
+"""Low-level background SDL input channel for a running Factorio client.
+
+Frida-injected keyboard and virtual mouse input: works without window focus,
+does not need RCON/scenario support and does not write game state.  High-level
+world actions (mine/pick/build/open/walk) live in ``bridge.client_actions``.
 
 All game-touching calls are queued and executed from a hook that fires on the
 game thread (SDL_PollEvent / luaD_call), never from the Frida RPC thread.
+Addresses are public symbols from Factorio 2.1.23 (win64), resolved as RVAs.
+A game update can move them; update RVA and re-run the smoke test.
 """
 from __future__ import annotations
 
@@ -132,13 +138,20 @@ function firstWindow() {
   const n = count.readS32();
   return n > 0 ? arr.readPointer() : null;
 }
+function firstMouse() {
+  const count = Memory.alloc(4);
+  const arr = f.getMice(count);
+  const n = count.readS32();
+  return n > 0 ? arr.readU32() : 0;
+}
 function firstKeyboard() {
   const count = Memory.alloc(4);
   const arr = f.getKeyboards(count);
   const n = count.readS32();
   return n > 0 ? arr.readU32() : 0;
 }
-let vm = { active: false, x: 0, y: 0, win: null, buttons: 0 };
+let vm = { active: false, x: 0, y: 0, win: null, buttons: 0, mouseID: 0 };
+let fakeSrc = null;
 let winID = 0;
 function pushWindowEvent(type, windowID) {
   try {
@@ -247,7 +260,15 @@ rpc.exports = {
       const m = f.getMice(count);
       const mouseID = count.readS32() > 0 ? m.readU32() : 0;
       vm.win = w;
-      vm.active = true;
+      if (!vm.mouseID) vm.mouseID = firstMouse();
+      if (!vm.active) {
+        vm.active = true;
+        vm.buttons = 0;
+        try {
+          const wp = Memory.alloc(4), hp = Memory.alloc(4);
+          if (f.getWindowSize(w, wp, hp)) { vm.x = wp.readS32() / 2; vm.y = hp.readS32() / 2; }
+        } catch (e) { vm.x = 0; vm.y = 0; }
+      }
       const bit = button === 1 ? 1 : button === 2 ? 2 : button === 3 ? 4 : 0;
       if (bit) { if (down) vm.buttons |= bit; else vm.buttons &= ~bit; }
       f.setMouseFocus(w);
@@ -261,7 +282,9 @@ rpc.exports = {
     return run(() => {
       let w = f.getFocus();
       if (w.isNull()) w = firstWindow();
-      vm.active = true; vm.x = x; vm.y = y; vm.win = w; vm.buttons = 0;
+      vm.active = true; vm.x = x; vm.y = y;
+      if (!vm.mouseID) vm.mouseID = firstMouse(); vm.win = w; vm.buttons = 0;
+      if (!vm.mouseID) vm.mouseID = firstMouse();
       f.setMouseFocus(w);
       f.setFocus(w);
       setFocusFlags(w);
@@ -287,7 +310,31 @@ rpc.exports = {
     });
   },
   vmDisable() {
-    return run(() => { vm.active = false; return { active: false }; });
+    return run(() => { vm.buttons = 0; syncSdlMouse(); vm.active = false; return { active: false, buttons: 0 }; });
+  },
+  releaseAll() {
+    return run(() => {
+      let w = f.getFocus();
+      if (w.isNull()) w = firstWindow();
+      if (!w) throw new Error('no SDL window');
+      vm.win = w;
+      if (!vm.active) {
+        vm.active = true;
+        vm.buttons = 0;
+        try {
+          const wp = Memory.alloc(4), hp = Memory.alloc(4);
+          if (f.getWindowSize(w, wp, hp)) { vm.x = wp.readS32() / 2; vm.y = hp.readS32() / 2; }
+        } catch (e) { vm.x = 0; vm.y = 0; }
+      }
+      f.setMouseFocus(w); f.setFocus(w); syncSdlMouse();
+      const mouseID = firstMouse();
+      for (const b of [1, 2, 3]) {
+        vm.buttons &= ~(b === 1 ? 1 : b === 2 ? 2 : 4);
+        f.privateMouseButton(uint64(0), w, mouseID, b, 0, 1);
+      }
+      syncSdlMouse();
+      return { buttons: vm.buttons, x: vm.x, y: vm.y, winID };
+    });
   },
   vmState() { return { active: vm.active, x: vm.x, y: vm.y, winID, buttons: vm.buttons }; },
   vmWake() {
@@ -479,6 +526,9 @@ class ClientInput:
 
     def text(self, text: str) -> dict:
         return self.script.exports_sync.text(str(text))
+
+    def release_all(self) -> dict:
+        return self.script.exports_sync.release_all()
 
     def disable(self) -> dict:
         return self.script.exports_sync.vm_disable()
