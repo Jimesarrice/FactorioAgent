@@ -182,6 +182,7 @@ python -m bridge.client_mcp_server
 - 高层后台动作：`client_action_attach/state/mine/mine_entity/pick/build/craft/insert/take/pick_ground/open/walk_to/stop/close_ui/status/detach`；使用正常客户端输入 + 只读 Lua 状态，不需要窗口焦点。
 - 无人值守循环：`client_auto_start`（收矿/装炉/取板/分煤/工单合成/回锚点）、`client_auto_status`、`client_auto_stop`；也可用 `python -m bridge.client_autopilot` 独立运行。
 - 配方 GUI：`client_action_set_recipe`（打开无配方机器→搜索→双击结果→自校验）、`client_action_recipe`（只读 get_recipe/status）。
+- 自动供料：燃烧机械臂/木箱/传送带都可用 `client_action_build` 摆放；机械臂拾取在朝向前方、投放在背后（`e.pickup_position`/`e.drop_position` 可读）。
 - 后台读取：`client_memory_attach/status/observe/inventory/detach`，通过 Frida 只读 Lua 桥读取位置、血量、背包、附近资源/实体和研究，不需要窗口焦点。
 
 输入工具不修改内存/游戏状态；内存工具只读，但需要安装 `frida`。
