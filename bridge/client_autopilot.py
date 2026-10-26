@@ -93,12 +93,14 @@ class BurnerAutopilot:
         self.stats = AutopilotStats()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._finished = False
 
     # ------------------------------------------------------------- lifecycle
     def start(self, minutes: float | None = None) -> "BurnerAutopilot":
         if self._thread and self._thread.is_alive():
             raise RuntimeError("autopilot already running")
         self._stop.clear()
+        self._finished = False
         self._thread = threading.Thread(
             target=self._run, args=(minutes,), name="burner-autopilot", daemon=True)
         self._thread.start()
@@ -111,7 +113,7 @@ class BurnerAutopilot:
 
     @property
     def running(self) -> bool:
-        return bool(self._thread and self._thread.is_alive())
+        return bool(self._thread and self._thread.is_alive() and not self._finished)
 
     def status(self) -> dict:
         return {"running": self.running, "layout": {
@@ -141,7 +143,8 @@ class BurnerAutopilot:
             remain = self.interval - (time.time() - t0)
             if remain > 0 and self._stop.wait(remain):
                 break
-        self.log(f"autopilot stop {json.dumps(self.status()['stats'], ensure_ascii=False)}")
+        self._finished = True
+        self.log(f"autopilot stop {json.dumps(self.stats.__dict__, ensure_ascii=False)}")
         self._save()
 
     def _save(self) -> None:
