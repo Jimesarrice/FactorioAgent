@@ -50,6 +50,7 @@ class ClientActions:
         "lab": {"char": (1223.0, 500.0), "red": (1760.0, 775.0)},
         "assembling-machine-1": {"char": (1225.0, 523.0), "input": (1775.0, 765.0)},
         "burner-inserter": {"char": (1223.0, 456.0), "fuel": (1762.0, 727.0)},
+        "burner-mining-drill": {"char": (1223.0, 518.0), "fuel": (1766.0, 772.0)},
     }
     RECIPE_BROWSER = {
         "search": (1845.0, 490.0),
