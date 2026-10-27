@@ -173,6 +173,15 @@ MCP：`client_auto_start`（参数 drill/chest/furnace/anchor/orders/interval/mi
 - 补杆的材料（1 木 + 2 铜线）来自就地砍的一棵枯树；砍树/合成/再走回断点约 1 分钟，比整条线重铺便宜得多。
 - 结果：电动矿钻落在铁矿上 + 落点木箱，20 秒内箱里已有 **53 铁矿**，无人值守。
 
+## 1.13 断线/掉服后的恢复（继续 0.3.9）
+
+长时跑局遇到过一次客户端正常退出（日志 `Disconnecting multiplayer connection. Reason: Quit.`）并连带服务端进程结束。恢复步骤：
+
+1. 看 `server/_autosave1/2/3.zip` 的时间戳，选**最新**的自动存档（15 分钟一轮，最多丢 15 分钟）。
+2. 用原参数重启服务端：`--start-server <存档> --mod-directory server/scenario-mods --port 34197 --rcon-bind 127.0.0.1:27017 --rcon-password test --server-settings server/agentbot-server-settings.json`。
+3. 客户端直接重启 BotClient（`--mp-connect 127.0.0.1:34197`），玩家实体与服务端进度都在存档里。
+4. 实测恢复后：电力线仍在（net=1）、铁箱里 293 铁矿都在，只丢了退出前最后几分钟。
+
 **限制**：实体库存无法通过客户端 Lua 读取（对非玩家实体调用 `get_inventory` 会硬错误），循环以时间片 + 玩家背包增量计数；煤的分配是启发式（半叠轮换），没有真实库存反馈。长时运行应在有 scenario/RCON 的服务器上并行观察，或定期人工校准。
 
 ## 2. 后台内存/Lua 读取（Frida）
